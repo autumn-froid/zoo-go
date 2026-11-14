@@ -195,6 +195,12 @@ CREATE TABLE IF NOT EXISTS community_posts (
     author_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     images_json TEXT NOT NULL DEFAULT '[]',
+    moderation_status TEXT NOT NULL DEFAULT 'PENDING',
+    moderation_reason TEXT NOT NULL DEFAULT '',
+    moderation_risk TEXT NOT NULL DEFAULT 'LOW',
+    review_note TEXT NOT NULL DEFAULT '',
+    reviewed_by TEXT NOT NULL DEFAULT '',
+    reviewed_at TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_community_created ON community_posts(created_at DESC, id DESC);

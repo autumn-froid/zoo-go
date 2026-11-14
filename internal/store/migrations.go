@@ -115,6 +115,47 @@ func (s *Store) migrateLocationSchema() error {
 	return nil
 }
 
+func (s *Store) migrateCommunitySchema() error {
+	columns := []struct {
+		name       string
+		definition string
+		addStatus  bool
+	}{
+		{"moderation_status", `ALTER TABLE community_posts ADD COLUMN moderation_status TEXT NOT NULL DEFAULT 'PENDING'`, true},
+		{"moderation_reason", `ALTER TABLE community_posts ADD COLUMN moderation_reason TEXT NOT NULL DEFAULT ''`, false},
+		{"moderation_risk", `ALTER TABLE community_posts ADD COLUMN moderation_risk TEXT NOT NULL DEFAULT 'LOW'`, false},
+		{"review_note", `ALTER TABLE community_posts ADD COLUMN review_note TEXT NOT NULL DEFAULT ''`, false},
+		{"reviewed_by", `ALTER TABLE community_posts ADD COLUMN reviewed_by TEXT NOT NULL DEFAULT ''`, false},
+		{"reviewed_at", `ALTER TABLE community_posts ADD COLUMN reviewed_at TEXT NOT NULL DEFAULT ''`, false},
+	}
+	addedStatus := false
+	for _, column := range columns {
+		exists, err := tableHasColumn(s.db, "community_posts", column.name)
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+		if _, err := s.db.Exec(column.definition); err != nil {
+			return err
+		}
+		if column.addStatus {
+			addedStatus = true
+		}
+	}
+	if addedStatus {
+		if _, err := s.db.Exec(`UPDATE community_posts SET moderation_status = 'APPROVED'`); err != nil {
+			return err
+		}
+	}
+	_, err := s.db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_community_moderation
+		ON community_posts(moderation_status, created_at DESC, id DESC)
+	`)
+	return err
+}
+
 func tableHasColumn(db *sql.DB, table, column string) (bool, error) {
 	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
 	if err != nil {

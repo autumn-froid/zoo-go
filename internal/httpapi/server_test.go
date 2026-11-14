@@ -297,17 +297,85 @@ func TestAuthenticatedEndToEndAndCommunity(t *testing.T) {
 	api.request(t, http.MethodPost, "/v1/orders/"+orderID+"/confirm", ownerToken, map[string]any{}, http.StatusOK)
 	api.request(t, http.MethodPost, "/v1/orders/"+orderID+"/rate", ownerToken, map[string]any{"stars": 5}, http.StatusOK)
 
+	ownerImageURL := api.uploadTestImage(t, ownerToken)
 	post := api.request(t, http.MethodPost, "/v1/community/posts", ownerToken, map[string]any{
-		"content": "今天豆豆顺利完成上门喂养，感谢平台。", "images": []string{firstURL},
+		"content": "今天豆豆顺利完成上门喂养，感谢平台。", "images": []string{ownerImageURL},
 	}, http.StatusCreated)
-	if post["data"].(map[string]any)["content"] == "" {
+	postData := post["data"].(map[string]any)
+	if postData["content"] == "" {
 		t.Fatal("community post missing content")
 	}
+	if postData["moderationStatus"] != domain.PostPending {
+		t.Fatalf("community post moderation status = %v, want %s", postData["moderationStatus"], domain.PostPending)
+	}
+	api.adminRequest(t, http.MethodPost, "/v1/admin/community/posts/"+postData["id"].(string)+"/approve", nil, http.StatusOK)
 	feed := api.request(t, http.MethodGet, "/v1/community/posts?limit=20", studentToken, nil, http.StatusOK)
 	items := feed["data"].(map[string]any)["items"].([]any)
 	if len(items) != 1 {
 		t.Fatalf("community feed length = %d, want 1", len(items))
 	}
+}
+
+func TestCommunityPostModerationReviewFlow(t *testing.T) {
+	api := newTestAPI(t)
+	ownerToken, _ := login(t, api, "community-owner", http.StatusOK)
+	viewerToken, _ := login(t, api, "community-viewer", http.StatusOK)
+
+	created := api.request(t, http.MethodPost, "/v1/community/posts", ownerToken, map[string]any{
+		"content": "周末带狗狗去公园散步。",
+	}, http.StatusCreated)
+	post := created["data"].(map[string]any)
+	postID := post["id"].(string)
+	if post["moderationStatus"] != domain.PostPending {
+		t.Fatalf("moderation status = %v, want %s", post["moderationStatus"], domain.PostPending)
+	}
+
+	ownerFeed := api.request(t, http.MethodGet, "/v1/community/posts?limit=20", ownerToken, nil, http.StatusOK)
+	if items := ownerFeed["data"].(map[string]any)["items"].([]any); len(items) != 1 {
+		t.Fatalf("owner should see own pending post, got %d items", len(items))
+	}
+	viewerFeed := api.request(t, http.MethodGet, "/v1/community/posts?limit=20", viewerToken, nil, http.StatusOK)
+	if items := viewerFeed["data"].(map[string]any)["items"].([]any); len(items) != 0 {
+		t.Fatalf("other users should not see pending post, got %d items", len(items))
+	}
+
+	pending := api.adminRequest(t, http.MethodGet, "/v1/admin/community/posts?status=PENDING", nil, http.StatusOK)
+	if items := pending["data"].([]any); len(items) != 1 {
+		t.Fatalf("pending moderation queue = %d items, want 1", len(items))
+	}
+	api.adminRequest(t, http.MethodPost, "/v1/admin/community/posts/"+postID+"/approve", nil, http.StatusOK)
+	viewerFeed = api.request(t, http.MethodGet, "/v1/community/posts?limit=20", viewerToken, nil, http.StatusOK)
+	if items := viewerFeed["data"].(map[string]any)["items"].([]any); len(items) != 1 {
+		t.Fatalf("approved post feed = %d items, want 1", len(items))
+	}
+
+	api.request(t, http.MethodPost, "/v1/community/posts", ownerToken, map[string]any{
+		"content": "这里可以赌博，加微信 13800138000",
+	}, http.StatusBadRequest)
+
+	held := api.request(t, http.MethodPost, "/v1/community/posts", ownerToken, map[string]any{
+		"content": "想交流的加微信 13800138000",
+	}, http.StatusCreated)
+	heldID := held["data"].(map[string]any)["id"].(string)
+	api.adminRequest(t, http.MethodPost, "/v1/admin/community/posts/"+heldID+"/reject", map[string]any{
+		"reason": "请勿在社区发布联系方式或站外导流信息",
+	}, http.StatusOK)
+	ownerFeed = api.request(t, http.MethodGet, "/v1/community/posts?limit=20", ownerToken, nil, http.StatusOK)
+	rejected := false
+	for _, raw := range ownerFeed["data"].(map[string]any)["items"].([]any) {
+		item := raw.(map[string]any)
+		if item["id"] == heldID {
+			rejected = item["moderationStatus"] == domain.PostRejected && item["reviewNote"] != ""
+		}
+	}
+	if !rejected {
+		t.Fatal("owner did not receive rejection status and reason")
+	}
+
+	viewerImage := api.uploadTestImage(t, viewerToken)
+	api.request(t, http.MethodPost, "/v1/community/posts", ownerToken, map[string]any{
+		"content": "借用别人的图片", "images": []string{viewerImage},
+	}, http.StatusBadRequest)
 }
 
 func TestAdminStudentVerificationReview(t *testing.T) {

@@ -48,6 +48,10 @@ const (
 	StudentRejected   = "REJECTED"
 	StudentExpired    = "EXPIRED"
 
+	PostPending  = "PENDING"
+	PostApproved = "APPROVED"
+	PostRejected = "REJECTED"
+
 	AccountActive   = "ACTIVE"
 	AccountDisabled = "DISABLED"
 
@@ -123,6 +127,7 @@ type AdminOverview struct {
 	VerifiedStudents     int   `json:"verifiedStudents"`
 	PendingVerifications int   `json:"pendingVerifications"`
 	PendingRefunds       int   `json:"pendingRefunds"`
+	PendingCommunity     int   `json:"pendingCommunity"`
 	ActiveOrders         int   `json:"activeOrders"`
 	CompletedOrders      int   `json:"completedOrders"`
 	TodayOrders          int   `json:"todayOrders"`
@@ -398,18 +403,38 @@ type CommunityAuthor struct {
 }
 
 type CommunityPost struct {
-	ID        string          `json:"id"`
-	Author    CommunityAuthor `json:"author"`
-	Content   string          `json:"content"`
-	Images    []string        `json:"images"`
-	CreatedAt time.Time       `json:"createdAt"`
-	Mine      bool            `json:"mine"`
+	ID               string          `json:"id"`
+	Author           CommunityAuthor `json:"author"`
+	Content          string          `json:"content"`
+	Images           []string        `json:"images"`
+	ModerationStatus string          `json:"moderationStatus"`
+	ModerationReason string          `json:"moderationReason,omitempty"`
+	RiskLevel        string          `json:"riskLevel,omitempty"`
+	ReviewNote       string          `json:"reviewNote,omitempty"`
+	ReviewedAt       *time.Time      `json:"reviewedAt,omitempty"`
+	CreatedAt        time.Time       `json:"createdAt"`
+	Mine             bool            `json:"mine"`
 }
 
 type CommunityFeed struct {
 	Items      []CommunityPost `json:"items"`
 	NextCursor string          `json:"nextCursor,omitempty"`
 	HasMore    bool            `json:"hasMore"`
+}
+
+type AdminCommunityPost struct {
+	ID               string     `json:"id"`
+	AuthorID         string     `json:"authorId"`
+	AuthorName       string     `json:"authorName"`
+	AuthorAvatar     string     `json:"authorAvatar"`
+	Content          string     `json:"content"`
+	Images           []string   `json:"images"`
+	ModerationStatus string     `json:"moderationStatus"`
+	RiskLevel        string     `json:"riskLevel"`
+	ModerationReason string     `json:"moderationReason,omitempty"`
+	ReviewNote       string     `json:"reviewNote,omitempty"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	ReviewedAt       *time.Time `json:"reviewedAt,omitempty"`
 }
 
 type Area struct {
@@ -507,6 +532,10 @@ type CreatePetRequest struct {
 type CreatePostRequest struct {
 	Content string   `json:"content"`
 	Images  []string `json:"images"`
+}
+
+type RejectCommunityPostRequest struct {
+	Reason string `json:"reason"`
 }
 
 type LoginRequest struct {

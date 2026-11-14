@@ -7,6 +7,7 @@ const VIEW_META = {
     refunds: {eyebrow: '资金处置', title: '退款审核', subtitle: '处理主人退款申请，并跟进微信原路退款结果。'},
     users: {eyebrow: '人员管理', title: '用户管理', subtitle: '查看主人和学生账号，处理停用与恢复。'},
     orders: {eyebrow: '履约管理', title: '订单管理', subtitle: '追踪订单状态、双方人员、服务时间与金额。'},
+    community: {eyebrow: '内容风控', title: '动态审核', subtitle: '复核图文动态，防止违法、低俗、导流和隐私泄露内容公开展示。'},
     audits: {eyebrow: '风控留痕', title: '审计日志', subtitle: '查询审核、退款和账号处置的后台操作记录。'},
 }
 
@@ -18,6 +19,7 @@ const state = {
         refunds: 'REQUESTED',
         users: {status: 'ALL', query: ''},
         orders: 'ALL',
+        community: 'PENDING',
     },
     data: {},
     modalResolve: null,
@@ -68,6 +70,7 @@ const localDateInput = (date) => {
 
 const statusMap = {
     PENDING: ['待审核', 'amber'],
+    APPROVED: ['已通过', 'green'],
     VERIFIED: ['已通过', 'green'],
     REJECTED: ['已驳回', 'red'],
     EXPIRED: ['已过期', 'gray'],
@@ -202,6 +205,11 @@ const renderOverview = (overview) => {
                 <div class="stat-value">${overview.pendingRefunds}</div>
                 <div class="stat-note">需按退款规则人工处置</div>
             </article>
+            <article class="stat-card accent">
+                <div class="stat-label">待审动态</div>
+                <div class="stat-value">${overview.pendingCommunity}</div>
+                <div class="stat-note">通过后才会出现在社区动态流</div>
+            </article>
             <article class="stat-card">
                 <div class="stat-label">平台用户</div>
                 <div class="stat-value">${overview.users}</div>
@@ -223,6 +231,11 @@ const renderOverview = (overview) => {
                         <span class="queue-icon">↩</span>
                         <span><strong>主人退款申请</strong><small>审核通过后调用微信原路退款</small></span>
                         <span class="queue-meta">${overview.pendingRefunds} 项待办</span>
+                    </button>
+                    <button class="queue-item" type="button" data-goto="community">
+                        <span class="queue-icon">▧</span>
+                        <span><strong>社区动态审核</strong><small>图片动态默认人工复核，违规内容直接驳回</small></span>
+                        <span class="queue-meta">${overview.pendingCommunity} 项待办</span>
                     </button>
                     <button class="queue-item" type="button" data-goto="users">
                         <span class="queue-icon">◎</span>
@@ -470,6 +483,56 @@ const renderOrders = (items) => {
     `
 }
 
+const riskLabels = {
+    LOW: ['低风险', 'green'],
+    MEDIUM: ['需复核', 'amber'],
+    HIGH: ['高风险', 'red'],
+}
+
+const riskBadge = (level) => {
+    const [label, tone] = riskLabels[level] || riskLabels.LOW
+    return `<span class="badge badge-${tone}">${escapeHTML(label)}</span>`
+}
+
+const renderCommunity = (items) => {
+    const toolbar = `
+        <div class="toolbar">
+            ${filterButtons('community', state.filters.community, [
+                ['PENDING', '待审核'], ['APPROVED', '已通过'], ['REJECTED', '已驳回'], ['ALL', '全部'],
+            ])}
+            <div class="toolbar-spacer"></div>
+            <span class="muted-cell">共 ${items.length} 条</span>
+        </div>
+    `
+    if (!items.length) {
+        root.innerHTML = toolbar + emptyState('当前没有待处理的社区动态', '新发布的动态会先进入审核队列。')
+        return
+    }
+    root.innerHTML = toolbar + `
+        <div class="table-wrap"><table>
+            <thead><tr><th>发布者</th><th>动态内容</th><th>风险提示</th><th>发布时间</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>${items.map((item) => `
+                <tr>
+                    <td>${person(item.authorName, item.authorId, item.authorAvatar)}</td>
+                    <td class="ugc-content-cell">
+                        <div class="ugc-content">${escapeHTML(item.content || '仅图片')}</div>
+                        ${(item.images || []).length ? `<div class="ugc-images">${item.images.slice(0, 4).map((url) => `
+                            <a href="${escapeHTML(url)}" target="_blank" rel="noreferrer"><img src="${escapeHTML(url)}" alt="动态图片"></a>
+                        `).join('')}</div>` : ''}
+                    </td>
+                    <td>${riskBadge(item.riskLevel)}${item.moderationReason ? `<div class="muted-cell ugc-reason">${escapeHTML(item.moderationReason)}</div>` : ''}</td>
+                    <td class="muted-cell">${formatDate(item.createdAt)}</td>
+                    <td>${badge(item.moderationStatus)}${item.reviewNote ? `<div class="muted-cell ugc-reason">${escapeHTML(item.reviewNote)}</div>` : ''}</td>
+                    <td>${item.moderationStatus === 'PENDING' ? `<div class="row-actions">
+                        <button class="button button-soft" data-action="community-approve" data-id="${escapeHTML(item.id)}">通过</button>
+                        <button class="button button-danger" data-action="community-reject" data-id="${escapeHTML(item.id)}">驳回</button>
+                    </div>` : '<span class="muted-cell">已处理</span>'}</td>
+                </tr>
+            `).join('')}</tbody>
+        </table></div>
+    `
+}
+
 const auditActionLabels = {
     STUDENT_VERIFICATION_APPROVED: '学籍审核通过',
     STUDENT_VERIFICATION_REJECTED: '学籍审核驳回',
@@ -477,6 +540,8 @@ const auditActionLabels = {
     REFUND_REJECTED: '退款审核驳回',
     USER_DISABLED: '停用账号',
     USER_ENABLED: '恢复账号',
+    COMMUNITY_POST_APPROVED: '动态审核通过',
+    COMMUNITY_POST_REJECTED: '动态审核驳回',
 }
 
 const renderAudits = (items) => {
@@ -526,6 +591,10 @@ const loadView = async () => {
             const status = state.filters.orders
             state.data.orders = await api(`/v1/admin/orders?status=${encodeURIComponent(status)}`)
             renderOrders(state.data.orders)
+        } else if (state.view === 'community') {
+            const status = state.filters.community
+            state.data.community = await api(`/v1/admin/community/posts?status=${encodeURIComponent(status)}`)
+            renderCommunity(state.data.community)
         } else if (state.view === 'audits') {
             state.data.audits = await api('/v1/admin/audit-logs?limit=200')
             renderAudits(state.data.audits)
@@ -682,6 +751,31 @@ const handleAction = async (button) => {
         if (value === null) return
         await request(`/v1/admin/users/${encodeURIComponent(id)}/status`, {
             method: 'POST', body: JSON.stringify({status: 'ACTIVE'}),
+        })
+    }
+    if (action === 'community-approve') {
+        const value = await openModal({
+            title: '通过动态审核',
+            description: '确认图文内容合法合规、无站外导流和隐私泄露后，动态会对所有用户展示。',
+            confirmText: '确认通过',
+            tone: 'primary',
+        })
+        if (value === null) return
+        await request(`/v1/admin/community/posts/${encodeURIComponent(id)}/approve`, {method: 'POST'})
+    }
+    if (action === 'community-reject') {
+        const reason = await openModal({
+            title: '驳回社区动态',
+            description: '驳回原因会展示给发布者，并写入审计日志。',
+            fieldLabel: '驳回原因',
+            fieldType: 'textarea',
+            placeholder: '例如：包含联系方式或站外导流信息',
+            confirmText: '确认驳回',
+            tone: 'danger',
+        })
+        if (reason === null) return
+        await request(`/v1/admin/community/posts/${encodeURIComponent(id)}/reject`, {
+            method: 'POST', body: JSON.stringify({reason}),
         })
     }
 }
