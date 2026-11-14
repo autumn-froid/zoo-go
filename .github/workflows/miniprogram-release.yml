@@ -34,15 +34,24 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      # Self-hosted China ECS: do not use actions/setup-node (GitHub releases time out).
+      # Install Node 20+ once on the runner host, e.g. via nodesource / nvm / apt.
+      - name: Check system Node.js
+        run: |
+          command -v node
+          command -v npm
+          node -v
+          major="$(node -p 'process.versions.node.split(".")[0]')"
+          if [[ "$major" -lt 18 ]]; then
+            echo "need Node.js 18+ on the self-hosted runner (found $(node -v))" >&2
+            exit 1
+          fi
 
       - name: Validate miniprogram
         run: node scripts/validate-miniprogram.mjs
 
       - name: Install miniprogram-ci
-        run: npm install --no-save miniprogram-ci@2
+        run: npm install --no-save --registry=https://registry.npmmirror.com miniprogram-ci@2
 
       - name: Resolve version and desc
         id: meta
