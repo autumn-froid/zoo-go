@@ -17,6 +17,7 @@ jobs:
   build-and-push:
     name: build-and-push
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       image: ${{ steps.meta.outputs.image }}
     steps:
@@ -54,6 +55,7 @@ jobs:
     name: deploy
     needs: build-and-push
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.2
@@ -67,6 +69,8 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: 22
+          # Fail hung SSH / remote docker pulls instead of blocking deploy-production.
+          command_timeout: 15m
           envs: DEPLOY_PATH,GHCR_TOKEN,GHCR_USER,IMAGE
           script: |
             set -euo pipefail
