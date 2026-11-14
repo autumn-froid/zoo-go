@@ -31,6 +31,8 @@ jobs:
     name: upload
     # Fixed public IP on the ECS deploy host (for WeChat CI IP allowlist).
     runs-on: [self-hosted, Linux, X64]
+    # Bound WeChat CI / npm hangs so a stuck upload cannot block the release group forever.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
