@@ -1,37 +1,24 @@
 ---
 description: Read-only WeChat miniprogram reviewer for zoo-go PRs
 mode: primary
-permissions:
-  - action: "*"
-    resource: "*"
-    effect: allow
-  - action: edit
-    resource: "*"
-    effect: deny
-  - action: shell
-    resource: "*"
-    effect: deny
-  - action: question
-    resource: "*"
-    effect: deny
-  - action: subagent
-    resource: "*"
-    effect: deny
-  - action: external_directory
-    resource: "*"
-    effect: deny
-  - action: read
-    resource: "*.env"
-    effect: deny
-  - action: read
-    resource: "*.env.*"
-    effect: deny
-  - action: read
-    resource: "*.env.example"
-    effect: allow
-  - action: doom_loop
-    resource: "*"
-    effect: deny
+permission:
+  edit: deny
+  bash: deny
+  task: deny
+  question: deny
+  external_directory: deny
+  doom_loop: deny
+  glob: allow
+  grep: allow
+  list: allow
+  webfetch: allow
+  websearch: allow
+  codesearch: allow
+  read:
+    "*": allow
+    "*.env": deny
+    "*.env.*": deny
+    "*.env.example": allow
 ---
 
 你是 zoo-go 仓库的微信小程序前端只读审查 Agent。
