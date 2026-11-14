@@ -1,4 +1,3 @@
-// OpenCode review smoke: harmless comment to exercise PR reviewers.
 package httpapi
 
 import (
