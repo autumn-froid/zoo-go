@@ -40,6 +40,7 @@ X-Admin-Token: <ADMIN_TOKEN>
 | 退款审核 | 查看退款申请；通过后调用微信原路退款，或填写原因驳回 |
 | 用户管理 | 按姓名、用户 ID、学校、手机号搜索；停用或恢复平台账号 |
 | 订单管理 | 按状态查看订单、交易双方、宠物、服务时间、金额和支付状态 |
+| 动态审核 | 复核社区图文动态；含图片的新动态默认进入人工审核队列 |
 | 审计日志 | 查看学籍审核、退款审核和账号处置记录 |
 
 停用账号会立即删除该用户全部登录会话，后续登录返回 `403`。恢复账号后，用户可重新走微信登录。停用原因最多 200 字，恢复时会清空停用原因。
@@ -56,6 +57,16 @@ X-Admin-Token: <ADMIN_TOKEN>
 4. 退款原因与订单实际履约情况一致。
 
 退款接口会执行事务状态迁移和幂等保护，后台按钮不能绕过这些校验。
+
+社区动态审核规则：
+
+1. 新动态默认进入 `PENDING`，只有 `APPROVED` 会出现在其他用户的动态流中。
+2. 发布者可以在社区页看到自己的待审核或已驳回动态，以及后台填写的驳回原因。
+3. 命中违法、低俗、赌博诈骗、伤害动物等硬规则时，接口直接返回 `400`，内容不会入库。
+4. 图片无法用本地规则判断内容，默认必须人工复核；生产环境应接入微信 `mediaCheckAsync` 或云内容审核后再考虑自动放行。
+5. 图片必须由发布者本人上传，防止复用他人上传文件或站外 URL。
+
+更完整的文本/图片检测选型与上线建议见 [`ugc-moderation.md`](ugc-moderation.md)。
 
 ## 4. 派单对比
 
@@ -78,6 +89,9 @@ X-Admin-Token: <ADMIN_TOKEN>
 | GET | `/v1/admin/users?q=&status=` | 用户查询，状态支持 `ALL`、`ACTIVE`、`DISABLED` |
 | POST | `/v1/admin/users/{id}/status` | 停用或恢复用户，请求体为 `{"status":"DISABLED","reason":"..."}` |
 | GET | `/v1/admin/orders?status=` | 订单查询 |
+| GET | `/v1/admin/community/posts?status=` | 动态审核查询，状态支持 `PENDING`、`APPROVED`、`REJECTED`、`ALL` |
+| POST | `/v1/admin/community/posts/{id}/approve` | 通过动态审核 |
+| POST | `/v1/admin/community/posts/{id}/reject` | 驳回动态，请求体为 `{"reason":"..."}` |
 | GET | `/v1/admin/audit-logs?limit=` | 审计日志查询 |
 | GET | `/v1/admin/student-verifications?status=` | 学籍申请查询 |
 | POST | `/v1/admin/student-verifications/{id}/approve` | 通过学籍认证 |

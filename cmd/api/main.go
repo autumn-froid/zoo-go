@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"zoo-go/internal/httpapi"
+	"zoo-go/internal/moderation"
 	"zoo-go/internal/observability"
 	"zoo-go/internal/payment"
 	"zoo-go/internal/store"
@@ -53,6 +55,18 @@ func main() {
 		os.Exit(1)
 	}
 	defer st.Close()
+
+	ugcPolicy := moderation.DefaultPolicy()
+	ugcPolicy.AutoApproveText = envBool("UGC_AUTO_APPROVE_TEXT", false)
+	ugcPolicy.RequireImageReview = envBool("UGC_REQUIRE_IMAGE_REVIEW", true)
+	if raw := os.Getenv("UGC_BLOCKED_TERMS"); raw != "" {
+		for _, term := range strings.Split(raw, ",") {
+			if term = strings.TrimSpace(term); term != "" {
+				ugcPolicy.BlockedTerms = append(ugcPolicy.BlockedTerms, term)
+			}
+		}
+	}
+	st.SetModerationPolicy(ugcPolicy)
 
 	apiConfig := httpapi.Config{
 		DevAuth:         envBool("DEV_AUTH", false),

@@ -54,6 +54,40 @@ func (s *Server) adminOrders(w http.ResponseWriter, r *http.Request) {
 	writeData(w, orders)
 }
 
+func (s *Server) adminCommunityPosts(w http.ResponseWriter, r *http.Request) {
+	posts, err := s.store.AdminCommunityPosts(query(r, "status", domain.PostPending), limitQuery(r, 100))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeData(w, posts)
+}
+
+func (s *Server) adminApproveCommunityPost(w http.ResponseWriter, r *http.Request) {
+	postID := r.PathValue("id")
+	if err := s.store.ApproveCommunityPost(postID, s.now()); err != nil {
+		writeError(w, err)
+		return
+	}
+	s.recordAdminAudit("COMMUNITY_POST_APPROVED", "community_post", postID, "")
+	writeData(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) adminRejectCommunityPost(w http.ResponseWriter, r *http.Request) {
+	var req domain.RejectCommunityPostRequest
+	if err := decode(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	postID := r.PathValue("id")
+	if err := s.store.RejectCommunityPost(postID, req.Reason, s.now()); err != nil {
+		writeError(w, err)
+		return
+	}
+	s.recordAdminAudit("COMMUNITY_POST_REJECTED", "community_post", postID, req.Reason)
+	writeData(w, map[string]bool{"ok": true})
+}
+
 func (s *Server) adminAuditLogs(w http.ResponseWriter, r *http.Request) {
 	logs, err := s.store.AdminAuditLogs(limitQuery(r, 100))
 	if err != nil {

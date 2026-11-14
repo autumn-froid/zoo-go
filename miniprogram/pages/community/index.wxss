@@ -77,6 +77,40 @@
     border-top: 1rpx solid #f0f1f3;
 }
 
+.composer-hint {
+    margin-top: 16rpx;
+    color: #8a918f;
+    font-size: 21rpx;
+    line-height: 1.5;
+}
+
+.post-status {
+    padding: 3rpx 10rpx;
+    border-radius: 999rpx;
+    font-size: 19rpx;
+    font-weight: 700;
+}
+
+.post-status-pending {
+    color: #9a4c08;
+    background: #fff4e5;
+}
+
+.post-status-rejected {
+    color: #a1271e;
+    background: #fdeceb;
+}
+
+.post-review-note {
+    margin-top: 12rpx;
+    padding: 12rpx 16rpx;
+    border-radius: 14rpx;
+    color: #a1271e;
+    background: #fdf2f1;
+    font-size: 22rpx;
+    line-height: 1.55;
+}
+
 .image-picker {
     display: flex;
     align-items: center;

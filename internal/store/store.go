@@ -18,6 +18,7 @@ import (
 
 	"zoo-go/internal/domain"
 	"zoo-go/internal/geo"
+	"zoo-go/internal/moderation"
 )
 
 const (
@@ -35,8 +36,9 @@ var (
 )
 
 type Store struct {
-	db   *sql.DB
-	path string
+	db         *sql.DB
+	path       string
+	moderation moderation.Policy
 }
 
 type dbUser struct {
@@ -91,7 +93,7 @@ func New(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
-	store := &Store{db: db, path: path}
+	store := &Store{db: db, path: path, moderation: moderation.DefaultPolicy()}
 	if err := store.migrateStudentVerificationSchema(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate student verification: %w", err)
@@ -99,6 +101,10 @@ func New(path string) (*Store, error) {
 	if err := store.migrateAdminSchema(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate admin schema: %w", err)
+	}
+	if err := store.migrateCommunitySchema(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate community schema: %w", err)
 	}
 	if err := store.migrateLocationSchema(); err != nil {
 		db.Close()
@@ -151,6 +157,10 @@ func (s *Store) ensureActiveOrderIndex() error {
 
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+func (s *Store) SetModerationPolicy(policy moderation.Policy) {
+	s.moderation = policy
 }
 
 func newID(prefix string) string {

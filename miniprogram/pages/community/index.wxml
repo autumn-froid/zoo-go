@@ -21,6 +21,7 @@
                 <view class="remove-image" data-index="{{index}}" catchtap="removeImage">×</view>
             </view>
         </view>
+        <view class="composer-hint">发布后进入审核；含图片的动态需要人工复核</view>
         <view class="composer-foot">
             <view class="image-picker" bindtap="chooseImages">
                 <text class="image-picker-icon">▧</text>
@@ -51,11 +52,13 @@
                             <text class="author-name">{{item.author.name}}</text>
                             <text wx:if="{{item.author.verified}}" class="verified">已核验</text>
                             <text wx:if="{{item.mine}}" class="mine-badge">我的</text>
+                            <text wx:if="{{item.mine && item.statusText}}" class="post-status post-status-{{item.statusClass}}">{{item.statusText}}</text>
                         </view>
                         <view class="tiny muted post-time">{{item.timeText}}</view>
                     </view>
                 </view>
                 <text wx:if="{{item.content}}" class="post-content" user-select>{{item.content}}</text>
+                <view wx:if="{{item.mine && item.reviewNote}}" class="post-review-note">审核说明：{{item.reviewNote}}</view>
                 <view wx:if="{{item.images.length}}" class="post-images post-images-{{item.images.length}}">
                     <image
                         wx:for="{{item.images}}"

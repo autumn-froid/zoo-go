@@ -91,6 +91,63 @@ func TestStudentVerificationMigrationAddsExpiryColumn(t *testing.T) {
 	}
 }
 
+func TestCommunityModerationMigrationKeepsLegacyPostsApproved(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy-community.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE users (
+			id TEXT PRIMARY KEY,
+			open_id TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
+			avatar TEXT NOT NULL DEFAULT '',
+			phone_mask TEXT NOT NULL DEFAULT '',
+			owner_verified INTEGER NOT NULL DEFAULT 0,
+			student_verified INTEGER NOT NULL DEFAULT 0,
+			student_status TEXT NOT NULL DEFAULT 'UNVERIFIED',
+			school TEXT NOT NULL DEFAULT '',
+			rating REAL NOT NULL DEFAULT 0,
+			done_count INTEGER NOT NULL DEFAULT 0,
+			service_radius_km REAL NOT NULL DEFAULT 3,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		INSERT INTO users(id, open_id, name, created_at, updated_at)
+		VALUES('u_legacy_author', 'legacy-author', '旧作者', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+		CREATE TABLE community_posts (
+			id TEXT PRIMARY KEY,
+			author_id TEXT NOT NULL,
+			content TEXT NOT NULL,
+			images_json TEXT NOT NULL DEFAULT '[]',
+			created_at TEXT NOT NULL
+		);
+		INSERT INTO community_posts(id, author_id, content, created_at)
+		VALUES('post_legacy', 'u_legacy_author', '历史动态', '2026-01-01T00:00:00Z');
+	`)
+	if err != nil {
+		db.Close()
+		t.Fatalf("create legacy community schema: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	st, err := New(path)
+	if err != nil {
+		t.Fatalf("New() migration error = %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	var status string
+	if err := st.db.QueryRow(`SELECT moderation_status FROM community_posts WHERE id = 'post_legacy'`).Scan(&status); err != nil {
+		t.Fatalf("read migrated post: %v", err)
+	}
+	if status != domain.PostApproved {
+		t.Fatalf("legacy post status = %s, want %s", status, domain.PostApproved)
+	}
+}
+
 func createTestUser(t *testing.T, st *Store, name string) domain.Profile {
 	t.Helper()
 	session, err := st.Login("test:"+name+"-"+newID("openid"), name, "", "", time.Now())

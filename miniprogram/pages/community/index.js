@@ -163,7 +163,7 @@ Page({
                     this.setData({images})
                 }
             }
-            await request('/v1/community/posts', {
+            const created = await request('/v1/community/posts', {
                 method: 'POST',
                 data: {
                     content,
@@ -172,7 +172,11 @@ Page({
             })
             tapFeedback()
             this.setData({content: '', images: [], canPublish: false})
-            wx.showToast({title: '动态已发布', icon: 'success'})
+            if (created && created.moderationStatus === 'PENDING') {
+                wx.showToast({title: '已提交审核', icon: 'none'})
+            } else {
+                wx.showToast({title: '动态已发布', icon: 'success'})
+            }
             await this.loadPosts(true, false)
         } catch (error) {
             wx.showToast({title: error.message, icon: 'none'})
