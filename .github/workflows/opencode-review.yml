@@ -84,6 +84,8 @@ jobs:
     needs: detect
     if: needs.detect.outputs.go == 'true'
     runs-on: ubuntu-latest
+    # Bound hangs in anomalyco/opencode/github (permission ask / no progress).
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -117,6 +119,8 @@ jobs:
     needs: detect
     if: needs.detect.outputs.miniprogram == 'true'
     runs-on: ubuntu-latest
+    # Bound hangs in anomalyco/opencode/github (permission ask / no progress).
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -150,6 +154,8 @@ jobs:
     needs: detect
     if: needs.detect.outputs.security == 'true'
     runs-on: ubuntu-latest
+    # Bound hangs in anomalyco/opencode/github (permission ask / no progress).
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v6

@@ -2,7 +2,34 @@
 description: Read-only security reviewer for zoo-go PRs (authz, injection, secrets)
 mode: primary
 permissions:
+  - action: "*"
+    resource: "*"
+    effect: allow
   - action: edit
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: question
+    resource: "*"
+    effect: deny
+  - action: subagent
+    resource: "*"
+    effect: deny
+  - action: external_directory
+    resource: "*"
+    effect: deny
+  - action: read
+    resource: "*.env"
+    effect: deny
+  - action: read
+    resource: "*.env.*"
+    effect: deny
+  - action: read
+    resource: "*.env.example"
+    effect: allow
+  - action: doom_loop
     resource: "*"
     effect: deny
 ---
