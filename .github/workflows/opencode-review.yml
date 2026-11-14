@@ -1,0 +1,174 @@
+name: opencode-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: opencode-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  detect:
+    name: detect-modules
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      miniprogram: ${{ steps.filter.outputs.miniprogram }}
+      security: ${{ steps.filter.outputs.security }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect changed modules
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          mapfile -t files < <(git diff --name-only "$BASE" "$HEAD")
+
+          go=false
+          mini=false
+          security=false
+          for f in "${files[@]}"; do
+            if [[ "$f" == *.go \
+               || "$f" == go.mod \
+               || "$f" == go.sum \
+               || "$f" == .golangci.yml \
+               || "$f" == cmd/* \
+               || "$f" == internal/* \
+               || "$f" == Dockerfile \
+               || "$f" == deploy/* ]]; then
+              go=true
+              security=true
+            fi
+            if [[ "$f" == miniprogram/* \
+               || "$f" == pet-feeding-miniapp/* \
+               || "$f" == scripts/upload-miniprogram.mjs \
+               || "$f" == scripts/validate-miniprogram.mjs ]]; then
+              mini=true
+              security=true
+            fi
+            if [[ "$f" == .env \
+               || "$f" == .env.* \
+               || "$f" == */.env \
+               || "$f" == */.env.* \
+               || "$f" == *.pem \
+               || "$f" == *.key \
+               || "$f" == *secret* \
+               || "$f" == *credential* ]]; then
+              security=true
+            fi
+          done
+
+          echo "Changed files:"
+          printf '  %s\n' "${files[@]}"
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+          echo "miniprogram=$mini" >> "$GITHUB_OUTPUT"
+          echo "security=$security" >> "$GITHUB_OUTPUT"
+          echo "Detected go=$go miniprogram=$mini security=$security"
+
+  review-go:
+    name: review-go
+    needs: detect
+    if: needs.detect.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Load Go review prompt
+        id: prompt
+        shell: bash
+        run: |
+          {
+            echo 'text<<EOF'
+            cat .github/opencode/prompts/go-review.md
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: OpenCode Go review
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode-go/muse-spark-1.3-contributor
+          agent: go-reviewer
+          prompt: ${{ steps.prompt.outputs.text }}
+
+  review-miniprogram:
+    name: review-miniprogram
+    needs: detect
+    if: needs.detect.outputs.miniprogram == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Load miniprogram review prompt
+        id: prompt
+        shell: bash
+        run: |
+          {
+            echo 'text<<EOF'
+            cat .github/opencode/prompts/miniprogram-review.md
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: OpenCode miniprogram review
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode-go/muse-spark-1.3-contributor
+          agent: miniprogram-reviewer
+          prompt: ${{ steps.prompt.outputs.text }}
+
+  review-security:
+    name: review-security
+    needs: detect
+    if: needs.detect.outputs.security == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Load security review prompt
+        id: prompt
+        shell: bash
+        run: |
+          {
+            echo 'text<<EOF'
+            cat .github/opencode/prompts/security-review.md
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: OpenCode security review
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        with:
+          model: opencode-go/muse-spark-1.3-contributor
+          agent: security-reviewer
+          prompt: ${{ steps.prompt.outputs.text }}
