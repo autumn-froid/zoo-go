@@ -1,4 +1,5 @@
 // CI smoke: trigger miniprogram-release upload
+// OpenCode review smoke: harmless comment to exercise PR reviewers.
 const TOKEN_KEY = 'zoo.authToken'
 const PROFILE_KEY = 'zoo.authProfile'
 const DEVICE_KEY = 'zoo.deviceId'
