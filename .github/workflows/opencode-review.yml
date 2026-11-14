@@ -9,7 +9,6 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  id-token: write
   contents: read
   pull-requests: write
   issues: write
@@ -106,9 +105,11 @@ jobs:
         uses: anomalyco/opencode/github@latest
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           model: opencode-go/muse-spark-1.3-contributor
           agent: go-reviewer
+          use_github_token: true
           prompt: ${{ steps.prompt.outputs.text }}
 
   review-miniprogram:
@@ -137,9 +138,11 @@ jobs:
         uses: anomalyco/opencode/github@latest
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           model: opencode-go/muse-spark-1.3-contributor
           agent: miniprogram-reviewer
+          use_github_token: true
           prompt: ${{ steps.prompt.outputs.text }}
 
   review-security:
@@ -168,7 +171,9 @@ jobs:
         uses: anomalyco/opencode/github@latest
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           model: opencode-go/muse-spark-1.3-contributor
           agent: security-reviewer
+          use_github_token: true
           prompt: ${{ steps.prompt.outputs.text }}
