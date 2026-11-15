@@ -284,8 +284,14 @@ func (s *Store) UpdateProfile(userID string, req domain.UpdateProfileRequest, no
 		return domain.Profile{}, validation("昵称不能超过 24 字")
 	}
 	avatar := strings.TrimSpace(req.Avatar)
-	if avatar != "" && !strings.HasPrefix(avatar, "/uploads/") && !strings.HasPrefix(avatar, "https://") {
-		return domain.Profile{}, validation("头像必须先上传到平台")
+	if avatar != "" {
+		if strings.HasPrefix(avatar, "https://") {
+			// keep remote avatar URLs as-is
+		} else if path := canonicalUploadPath(avatar); path != "" {
+			avatar = path
+		} else {
+			return domain.Profile{}, validation("头像必须先上传到平台")
+		}
 	}
 	if _, err := s.db.Exec(`UPDATE users SET name = ?, avatar = ?, updated_at = ? WHERE id = ?`,
 		name, avatar, timestamp(now), userID); err != nil {

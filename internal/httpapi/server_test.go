@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -214,7 +215,8 @@ func TestProfileUpdate(t *testing.T) {
 		"name": "小园", "avatar": "/uploads/avatar.png",
 	}, http.StatusOK)
 	profile := result["data"].(map[string]any)
-	if profile["id"] != userID || profile["name"] != "小园" || profile["avatar"] != "/uploads/avatar.png" {
+	avatar, _ := profile["avatar"].(string)
+	if profile["id"] != userID || profile["name"] != "小园" || !strings.HasPrefix(avatar, "/uploads/avatar.png") {
 		t.Fatalf("profile update response = %+v", profile)
 	}
 
@@ -640,11 +642,109 @@ func (api *testAPI) uploadTestImage(t *testing.T, token string) string {
 	if err := json.Unmarshal(data, &result); err != nil {
 		t.Fatalf("decode upload: %v", err)
 	}
-	url := result["data"].(map[string]any)["url"].(string)
+	payload := result["data"].(map[string]any)
+	url, _ := payload["url"].(string)
 	if url == "" {
 		t.Fatal("upload returned empty URL")
 	}
-	return url
+	if access, _ := payload["accessUrl"].(string); access == "" || !strings.Contains(access, "sig=") {
+		t.Fatalf("upload missing signed accessUrl: %+v", payload)
+	}
+	return strings.SplitN(url, "?", 2)[0]
+}
+
+func TestUploadRequiresAuthOrSignature(t *testing.T) {
+	api := newTestAPI(t)
+	token, _ := login(t, api, "upload-guard", http.StatusOK)
+	canonical := api.uploadTestImage(t, token)
+
+	anon, err := http.Get(api.base + canonical)
+	if err != nil {
+		t.Fatalf("anonymous GET upload: %v", err)
+	}
+	defer anon.Body.Close()
+	if anon.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous upload status = %d, want 401", anon.StatusCode)
+	}
+
+	png, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=")
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, _ := writer.CreateFormFile("file", "shot.png")
+	_, _ = part.Write(png)
+	writer.Close()
+	req, _ := http.NewRequest(http.MethodPost, api.base+"/v1/uploads", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	defer resp.Body.Close()
+	var result map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&result)
+	accessURL := result["data"].(map[string]any)["accessUrl"].(string)
+	signed, err := http.Get(api.base + accessURL)
+	if err != nil {
+		t.Fatalf("signed GET upload: %v", err)
+	}
+	defer signed.Body.Close()
+	if signed.StatusCode != http.StatusOK {
+		t.Fatalf("signed upload status = %d, want 200", signed.StatusCode)
+	}
+
+	authed, err := http.NewRequest(http.MethodGet, api.base+canonical, nil)
+	if err != nil {
+		t.Fatalf("authed request: %v", err)
+	}
+	authed.Header.Set("Authorization", "Bearer "+token)
+	authedResp, err := http.DefaultClient.Do(authed)
+	if err != nil {
+		t.Fatalf("authed GET upload: %v", err)
+	}
+	defer authedResp.Body.Close()
+	if authedResp.StatusCode != http.StatusOK {
+		t.Fatalf("authed upload status = %d, want 200", authedResp.StatusCode)
+	}
+}
+
+func TestCommunityPublishRateLimit(t *testing.T) {
+	api := newTestAPI(t)
+	token, _ := login(t, api, "rate-limit-user", http.StatusOK)
+	for i := 0; i < 3; i++ {
+		api.request(t, http.MethodPost, "/v1/community/posts", token, map[string]any{
+			"content": fmt.Sprintf("限流测试动态 %d", i+1),
+		}, http.StatusCreated)
+	}
+	blocked := api.request(t, http.MethodPost, "/v1/community/posts", token, map[string]any{
+		"content": "超出每日上限",
+	}, http.StatusTooManyRequests)
+	if blocked["error"].(map[string]any)["code"] != "RATE_LIMITED" {
+		t.Fatalf("rate limit error = %+v", blocked)
+	}
+}
+
+func TestAdminCommunityPendingQueueOrdersByRisk(t *testing.T) {
+	api := newTestAPI(t)
+	token, _ := login(t, api, "queue-owner", http.StatusOK)
+	low := api.request(t, http.MethodPost, "/v1/community/posts", token, map[string]any{
+		"content": "普通晒宠打卡",
+	}, http.StatusCreated)
+	high := api.request(t, http.MethodPost, "/v1/community/posts", token, map[string]any{
+		"content": "想交流的加微信 13800138000",
+	}, http.StatusCreated)
+	pending := api.adminRequest(t, http.MethodGet, "/v1/admin/community/posts?status=PENDING", nil, http.StatusOK)
+	items := pending["data"].([]any)
+	if len(items) < 2 {
+		t.Fatalf("pending items = %d, want at least 2", len(items))
+	}
+	first := items[0].(map[string]any)
+	if first["id"] != high["data"].(map[string]any)["id"] {
+		t.Fatalf("queue first = %+v, want high-risk post %v before %v", first, high["data"], low["data"])
+	}
+	if first["riskLevel"] != "HIGH" {
+		t.Fatalf("first riskLevel = %v, want HIGH", first["riskLevel"])
+	}
 }
 
 func TestHandlerRejectsBadBidJSON(t *testing.T) {

@@ -103,10 +103,22 @@ func (s *Store) communityPosts(viewerID, cursor string, limit int, includeOwn bo
 	return feed, nil
 }
 
+const (
+	communityNewUserDays     = 7
+	communityNewUserDailyMax = 3
+	communityDailyPostMax    = 10
+	communityDailyImageMax   = 30
+)
+
 func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostRequest, now time.Time) (domain.CommunityPost, error) {
 	user, err := s.userByID(authorID)
 	if err != nil {
 		return domain.CommunityPost{}, err
+	}
+	if status, _, err := s.accountStatus(authorID); err != nil {
+		return domain.CommunityPost{}, err
+	} else if status == domain.AccountDisabled {
+		return domain.CommunityPost{}, forbidden("账号已被停用，无法发布动态")
 	}
 	content := strings.TrimSpace(req.Content)
 	images := nonEmptyStrings(req.Images)
@@ -122,7 +134,8 @@ func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostReques
 	seen := map[string]bool{}
 	uniqueImages := images[:0]
 	for _, image := range images {
-		if !strings.HasPrefix(image, "/uploads/") {
+		image = canonicalUploadPath(image)
+		if image == "" {
 			return domain.CommunityPost{}, validation("图片必须先上传到平台")
 		}
 		filename := strings.TrimPrefix(image, "/uploads/")
@@ -139,6 +152,9 @@ func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostReques
 		}
 	}
 	images = uniqueImages
+	if err := s.enforceCommunityPublishLimits(authorID, len(images), now); err != nil {
+		return domain.CommunityPost{}, err
+	}
 	review := s.moderation.Review(content, len(images))
 	if review.Action == moderation.ActionReject {
 		return domain.CommunityPost{}, validation("内容包含平台禁止的信息，请修改后重试")
@@ -182,13 +198,25 @@ func (s *Store) AdminCommunityPosts(status string, limit int) ([]domain.AdminCom
 	if status != "" && status != domain.PostPending && status != domain.PostApproved && status != domain.PostRejected {
 		return nil, validation("动态审核状态筛选无效")
 	}
+	orderBy := "p.created_at DESC, p.id DESC"
+	if status == domain.PostPending {
+		// 待审队列：高风险优先，其次等待越久越靠前。
+		orderBy = `
+			CASE p.moderation_risk
+				WHEN 'HIGH' THEN 0
+				WHEN 'MEDIUM' THEN 1
+				ELSE 2
+			END ASC,
+			p.created_at ASC,
+			p.id ASC`
+	}
 	rows, err := s.db.Query(`
 		SELECT p.id, p.author_id, u.name, u.avatar, p.content, p.images_json,
 		       p.moderation_status, p.moderation_risk, p.moderation_reason,
 		       p.review_note, p.created_at, p.reviewed_at
 		FROM community_posts p JOIN users u ON u.id = p.author_id
 		WHERE (? = '' OR p.moderation_status = ?)
-		ORDER BY p.created_at DESC, p.id DESC
+		ORDER BY `+orderBy+`
 		LIMIT ?
 	`, status, status, limit)
 	if err != nil {
@@ -257,6 +285,67 @@ func (s *Store) RejectCommunityPost(id, reason string, now time.Time) error {
 		return notFound("动态不存在")
 	}
 	return nil
+}
+
+func (s *Store) enforceCommunityPublishLimits(authorID string, imageCount int, now time.Time) error {
+	since := now.Add(-24 * time.Hour)
+	var postCount int
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM community_posts
+		WHERE author_id = ? AND created_at >= ?
+	`, authorID, timestamp(since)).Scan(&postCount); err != nil {
+		return err
+	}
+	dailyMax := communityDailyPostMax
+	var createdAt string
+	if err := s.db.QueryRow(`SELECT created_at FROM users WHERE id = ?`, authorID).Scan(&createdAt); err != nil {
+		return err
+	}
+	if parseTimestamp(createdAt).After(now.Add(-communityNewUserDays * 24 * time.Hour)) {
+		dailyMax = communityNewUserDailyMax
+	}
+	if postCount >= dailyMax {
+		return rateLimited("今日发布次数已达上限，请明天再试")
+	}
+	rows, err := s.db.Query(`
+		SELECT images_json FROM community_posts
+		WHERE author_id = ? AND created_at >= ?
+	`, authorID, timestamp(since))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	usedImages := 0
+	for rows.Next() {
+		var imagesJSON string
+		if err := rows.Scan(&imagesJSON); err != nil {
+			return err
+		}
+		usedImages += len(decodeStrings(imagesJSON))
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if usedImages+imageCount > communityDailyImageMax {
+		return rateLimited("今日上传图片数量已达上限，请明天再试")
+	}
+	return nil
+}
+
+func canonicalUploadPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	path = strings.SplitN(path, "?", 2)[0]
+	if !strings.HasPrefix(path, "/uploads/") {
+		return ""
+	}
+	filename := strings.TrimPrefix(path, "/uploads/")
+	if filename == "" || strings.Contains(filename, "/") || filename == "." || filename == ".." {
+		return ""
+	}
+	return "/uploads/" + filename
 }
 
 func (s *Store) RecordUpload(ownerID, filename, originalName, mimeType string, size int64, now time.Time) error {

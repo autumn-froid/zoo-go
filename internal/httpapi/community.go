@@ -20,7 +20,7 @@ func (s *Server) communityPosts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, feed)
+	s.writeData(w, feed)
 }
 
 func (s *Server) createCommunityPost(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +34,7 @@ func (s *Server) createCommunityPost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, envelope{Data: post})
+	s.writeCreated(w, post)
 }
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
@@ -81,11 +81,13 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, map[string]any{
-		"url":      "/uploads/" + filename,
-		"filename": filename,
-		"mimeType": mimeType,
-		"size":     len(data),
+	canonical := "/uploads/" + filename
+	s.writeData(w, map[string]any{
+		"url":       canonical,
+		"accessUrl": s.signedUploadURL(canonical, defaultUploadURLTTL),
+		"filename":  filename,
+		"mimeType":  mimeType,
+		"size":      len(data),
 	})
 }
 

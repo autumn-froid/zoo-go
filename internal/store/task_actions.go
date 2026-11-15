@@ -581,11 +581,15 @@ func (s *Store) Complete(orderID string, req domain.CompleteRequest, now time.Ti
 	if len(photos) > 9 {
 		return domain.TaskView{}, validation("服务凭证最多 9 张")
 	}
+	normalizedPhotos := make([]string, 0, len(photos))
 	for _, photo := range photos {
-		if !strings.HasPrefix(photo, "/uploads/") {
+		path := canonicalUploadPath(photo)
+		if path == "" {
 			return domain.TaskView{}, validation("服务凭证必须先上传到平台")
 		}
+		normalizedPhotos = append(normalizedPhotos, path)
 	}
+	photos = normalizedPhotos
 	if _, err := tx.Exec(`UPDATE orders SET status = 'PENDING_CONFIRM', completed_at = ? WHERE id = ? AND status = 'IN_SERVICE'`, timestamp(now), orderID); err != nil {
 		return domain.TaskView{}, err
 	}

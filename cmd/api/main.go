@@ -69,12 +69,13 @@ func main() {
 	st.SetModerationPolicy(ugcPolicy)
 
 	apiConfig := httpapi.Config{
-		DevAuth:         envBool("DEV_AUTH", false),
-		WeChatAppID:     os.Getenv("WECHAT_APP_ID"),
-		WeChatAppSecret: os.Getenv("WECHAT_APP_SECRET"),
-		AdminToken:      os.Getenv("ADMIN_TOKEN"),
-		UploadDir:       *uploadDir,
-		AdminDir:        *adminDir,
+		DevAuth:             envBool("DEV_AUTH", false),
+		WeChatAppID:         os.Getenv("WECHAT_APP_ID"),
+		WeChatAppSecret:     os.Getenv("WECHAT_APP_SECRET"),
+		AdminToken:          os.Getenv("ADMIN_TOKEN"),
+		UploadDir:           *uploadDir,
+		UploadSigningSecret: os.Getenv("UPLOAD_SIGNING_SECRET"),
+		AdminDir:            *adminDir,
 	}
 	payments, err := buildPaymentService(st, logger)
 	if err != nil {

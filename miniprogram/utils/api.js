@@ -109,6 +109,7 @@ module.exports = {
             return path
         }
         if (path.startsWith('/uploads/')) {
+            // 后端会下发带 exp/sig 的短期访问链接；原样拼到 API 域名。
             return `${getApp().globalData.apiBase.replace(/\/$/, '')}${path}`
         }
         return path

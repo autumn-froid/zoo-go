@@ -155,10 +155,11 @@ Page({
             for (let index = 0; index < images.length; index += 1) {
                 if (!images[index].url) {
                     const result = await upload(images[index].path)
+                    const storedURL = String(result.url || '').split('?')[0]
                     images[index] = {
                         ...images[index],
-                        url: result.url,
-                        src: mediaUrl(result.url),
+                        url: storedURL,
+                        src: mediaUrl(result.accessUrl || result.url || storedURL),
                     }
                     this.setData({images})
                 }

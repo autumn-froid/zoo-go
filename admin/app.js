@@ -7,7 +7,7 @@ const VIEW_META = {
     refunds: {eyebrow: '资金处置', title: '退款审核', subtitle: '处理主人退款申请，并跟进微信原路退款结果。'},
     users: {eyebrow: '人员管理', title: '用户管理', subtitle: '查看主人和学生账号，处理停用与恢复。'},
     orders: {eyebrow: '履约管理', title: '订单管理', subtitle: '追踪订单状态、双方人员、服务时间与金额。'},
-    community: {eyebrow: '内容风控', title: '动态审核', subtitle: '复核图文动态，防止违法、低俗、导流和隐私泄露内容公开展示。'},
+            community: {eyebrow: '内容风控', title: '动态审核', subtitle: '待审队列按风险优先、等待时长排序；复核图文，防止违法、低俗、导流和隐私泄露。'},
     audits: {eyebrow: '风控留痕', title: '审计日志', subtitle: '查询审核、退款和账号处置的后台操作记录。'},
 }
 

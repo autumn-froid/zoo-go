@@ -19,13 +19,14 @@ import (
 )
 
 type Config struct {
-	DevAuth         bool
-	WeChatAppID     string
-	WeChatAppSecret string
-	AdminToken      string
-	UploadDir       string
-	AdminDir        string
-	Payments        *payment.Service
+	DevAuth             bool
+	WeChatAppID         string
+	WeChatAppSecret     string
+	AdminToken          string
+	UploadDir           string
+	UploadSigningSecret string
+	AdminDir            string
+	Payments            *payment.Service
 }
 
 type Server struct {
@@ -49,6 +50,13 @@ func New(s *store.Store, config Config, logger *slog.Logger) *Server {
 	}
 	if config.AdminDir == "" {
 		config.AdminDir = "admin"
+	}
+	if config.UploadSigningSecret == "" {
+		if config.AdminToken != "" {
+			config.UploadSigningSecret = "upload:" + config.AdminToken
+		} else {
+			config.UploadSigningSecret = "dev-upload-signing-secret"
+		}
 	}
 	_ = os.MkdirAll(config.UploadDir, 0o755)
 	return &Server{store: s, logger: logger, config: config, payments: config.Payments, now: time.Now}
@@ -118,15 +126,7 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		adminFiles.ServeHTTP(w, r)
 	}))
-	uploads := http.StripPrefix("/uploads/", http.FileServer(http.Dir(s.config.UploadDir)))
-	mux.Handle("GET /uploads/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/uploads/" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Cache-Control", "public, max-age=86400")
-		uploads.ServeHTTP(w, r)
-	}))
+	mux.HandleFunc("GET /uploads/", s.serveUpload)
 	mux.Handle("/v1/", s.authenticate(api))
 	return s.middleware(mux)
 }
@@ -207,8 +207,12 @@ type apiError struct {
 	Message string `json:"message"`
 }
 
-func writeData(w http.ResponseWriter, data any) {
-	writeJSON(w, http.StatusOK, envelope{Data: data})
+func (s *Server) writeData(w http.ResponseWriter, data any) {
+	writeJSON(w, http.StatusOK, envelope{Data: s.signMediaURLs(data)})
+}
+
+func (s *Server) writeCreated(w http.ResponseWriter, data any) {
+	writeJSON(w, http.StatusCreated, envelope{Data: s.signMediaURLs(data)})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

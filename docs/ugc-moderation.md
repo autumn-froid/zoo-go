@@ -72,11 +72,20 @@ PENDING → MACHINE_REVIEWING → APPROVED / REJECTED / MANUAL_REVIEW
 | `UGC_AUTO_APPROVE_TEXT` | `false` | 纯文字且未命中风险时是否自动通过；接入可靠文本审核前建议保持 `false` |
 | `UGC_REQUIRE_IMAGE_REVIEW` | `true` | 含图片是否必须人工复核；接入图片审核后可改为 `false` |
 | `UGC_BLOCKED_TERMS` | 空 | 追加自定义硬拦截词，英文逗号分隔 |
+| `UPLOAD_SIGNING_SECRET` | 回退到 `upload:`+`ADMIN_TOKEN` | 图片短期访问链接 HMAC 密钥；生产环境请显式配置 |
 
-## 5. 上线前还需要补充
+## 5. P0 已落地
 
-- 图片和审核材料使用私有对象存储、短期签名 URL，避免上传后即使未审核也能被公开访问。
-- 增加发布频率限制、同设备/同 IP 风控、重复内容检测和用户举报入口。
+- `GET /uploads/*` 不再匿名可读：需登录 Bearer、管理员 Token，或有效的 `exp`+`sig` 签名链接。
+- API 响应中的 `/uploads/...` 会自动附带约 2 小时有效的签名；库内仍存规范路径。
+- 发帖频控：新用户（7 天内）3 条/日，其余 10 条/日；图片合计 30 张/日。超限返回 `429 RATE_LIMITED`。
+- 停用账号禁止发帖（鉴权层 + 发帖入口双重校验）。
+- 待审队列按 `HIGH → MEDIUM → LOW`，同级按等待越久越靠前排序。
+
+## 6. 上线前还需要补充（P1+）
+
+- 接入微信 `msgSecCheck` / `mediaCheckAsync`，再考虑自动放行。
+- 同设备/同 IP 风控、重复内容检测和用户举报入口。
 - 明确审核 SLA、分级标准、申诉流程和违规账号处置策略。
 - 审核日志记录真实操作人、来源 IP、请求 ID 和审核前后状态。
-- 对审核队列中的图片做访问权限控制，避免运营后台成为二次泄露渠道。
+- 对象存储私有桶与更细的未审图 ACL（仅作者/审核员）。
