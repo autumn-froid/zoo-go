@@ -24,7 +24,8 @@ permissions:
 
 concurrency:
   group: miniprogram-release
-  cancel-in-progress: false
+  # Prefer the latest upload; supersede stale queued/in-flight releases.
+  cancel-in-progress: true
 
 jobs:
   upload:
