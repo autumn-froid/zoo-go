@@ -14,13 +14,13 @@ const steps = [
   },
   {
     icon: Gavel,
-    title: "学生报价",
-    detail: "附近核验学生保密报价，你可看完成单量与评价后比较。",
+    title: "宠护师报价",
+    detail: "附近实名核验通过的宠护师保密报价，你可看完成单量与评价后比较。",
   },
   {
     icon: CreditCard,
     title: "选人支付",
-    detail: "择优确认中选者并付款，门牌信息才对其短期开放。",
+    detail: "择优确认中选宠护师并付款，门牌信息才对其短期开放。",
   },
   {
     icon: Camera,
@@ -43,7 +43,7 @@ export function HowItWorks() {
             反向竞价，你来做主
           </h2>
           <p className="mt-4 max-w-prose text-muted-foreground leading-relaxed">
-            不是服务者挂价等人挑。你设价格上限，核验学生来报价，成交与否由你决定。
+            不是宠护师挂价等人挑。你设价格上限，实名核验通过的宠护师来报价，成交与否由你决定。
           </p>
         </Reveal>
 

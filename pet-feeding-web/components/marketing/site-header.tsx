@@ -9,7 +9,7 @@ const links = [
   { href: "#how", label: "如何运作" },
   { href: "#trust", label: "安全保障" },
   { href: "#coverage", label: "服务范围" },
-  { href: "#students", label: "学生加入" },
+  { href: "#students", label: "加入我们" },
 ];
 
 export function SiteHeader() {

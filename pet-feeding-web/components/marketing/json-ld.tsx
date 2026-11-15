@@ -25,8 +25,8 @@ export function JsonLd() {
       url: siteUrl,
       description: SITE_OG_DESCRIPTION,
       areaServed: {
-        "@type": "AdministrativeArea",
-        name: "北京市海淀区马连洼街道",
+        "@type": "Country",
+        name: "中国各省市",
       },
       serviceType: "上门宠物喂养",
       availableLanguage: "zh-CN",
