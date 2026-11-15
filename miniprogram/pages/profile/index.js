@@ -63,7 +63,7 @@ Page({
         try {
             let avatar = this.data.avatar
             if (this.data.avatarChanged) {
-                avatar = (await upload(this.data.avatarPreview)).url
+                avatar = (await upload(this.data.avatarPreview)).path
             }
             const profile = await request('/v1/profile', {
                 method: 'POST',

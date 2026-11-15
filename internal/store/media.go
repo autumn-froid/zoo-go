@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"errors"
 	"net/url"
 	"path"
 	"strings"
@@ -28,4 +30,27 @@ func normalizeMediaReference(value string) string {
 		return canonical
 	}
 	return value
+}
+
+func (s *Store) ensureUploadOwner(value, ownerID string) (string, error) {
+	return s.ensureUploadOwnerWith(s.db, value, ownerID)
+}
+
+func (s *Store) ensureUploadOwnerWith(queryer rowQuerier, value, ownerID string) (string, error) {
+	canonical, ok := canonicalUploadPath(value)
+	if !ok {
+		return "", validation("图片必须先上传到平台")
+	}
+	filename := strings.TrimPrefix(canonical, "/uploads/")
+	var uploadOwnerID string
+	if err := queryer.QueryRow(`SELECT owner_id FROM uploads WHERE filename = ?`, filename).Scan(&uploadOwnerID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", notFound("上传文件不存在")
+		}
+		return "", err
+	}
+	if uploadOwnerID != ownerID {
+		return "", validation("图片必须由当前用户上传")
+	}
+	return canonical, nil
 }

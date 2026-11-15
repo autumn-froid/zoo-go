@@ -285,9 +285,9 @@ func (s *Store) UpdateProfile(userID string, req domain.UpdateProfileRequest, no
 	}
 	avatar := strings.TrimSpace(req.Avatar)
 	if strings.HasPrefix(avatar, "/uploads/") {
-		canonical, ok := canonicalUploadPath(avatar)
-		if !ok {
-			return domain.Profile{}, validation("头像地址无效")
+		canonical, err := s.ensureUploadOwner(avatar, userID)
+		if err != nil {
+			return domain.Profile{}, err
 		}
 		avatar = canonical
 	}
@@ -415,9 +415,9 @@ func (s *Store) CreatePet(ownerID string, req domain.CreatePetRequest, now time.
 	}
 	image := strings.TrimSpace(req.Image)
 	if strings.HasPrefix(image, "/uploads/") {
-		canonical, ok := canonicalUploadPath(image)
-		if !ok {
-			return domain.Pet{}, validation("宠物图片地址无效")
+		canonical, err := s.ensureUploadOwner(image, ownerID)
+		if err != nil {
+			return domain.Pet{}, err
 		}
 		image = canonical
 	}

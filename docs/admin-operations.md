@@ -22,7 +22,7 @@ DEV_AUTH=true ADMIN_TOKEN=dev-admin ./scripts/run-local.sh
 UPLOAD_SIGNING_KEY="$(openssl rand -hex 32)" ./scripts/run-local.sh
 ```
 
-未设置时服务会生成进程级临时密钥，服务重启后旧图片 URL 会失效；多实例部署必须使用同一个固定密钥。
+密钥至少 16 字节。未设置或过短时服务会生成进程级临时密钥，服务重启后旧图片 URL 会失效；多实例部署必须使用同一个固定密钥。
 
 生产环境必须使用高强度随机值，并通过 HTTPS 暴露服务：
 

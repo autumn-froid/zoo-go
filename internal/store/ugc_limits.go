@@ -19,15 +19,19 @@ const (
 
 var chinaTimeZone = time.FixedZone("Asia/Shanghai", ugcDayOffsetSeconds)
 
+type rowQuerier interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
 func ugcDayBounds(now time.Time) (time.Time, time.Time) {
 	local := now.In(chinaTimeZone)
 	start := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, chinaTimeZone)
 	return start.UTC(), start.AddDate(0, 0, 1).UTC()
 }
 
-func (s *Store) enforceCommunityPostLimit(authorID string, now time.Time) error {
+func (s *Store) enforceCommunityPostLimit(queryer rowQuerier, authorID string, now time.Time) error {
 	var accountStatus, createdAt string
-	err := s.db.QueryRow(`SELECT account_status, created_at FROM users WHERE id = ?`, authorID).Scan(&accountStatus, &createdAt)
+	err := queryer.QueryRow(`SELECT account_status, created_at FROM users WHERE id = ?`, authorID).Scan(&accountStatus, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return notFound("用户不存在")
 	}
@@ -45,7 +49,7 @@ func (s *Store) enforceCommunityPostLimit(authorID string, now time.Time) error 
 	}
 	start, end := ugcDayBounds(now)
 	var count int
-	if err := s.db.QueryRow(`
+	if err := queryer.QueryRow(`
 		SELECT COUNT(*) FROM community_posts
 		WHERE author_id = ? AND created_at >= ? AND created_at < ?
 	`, authorID, timestamp(start), timestamp(end)).Scan(&count); err != nil {
@@ -60,9 +64,9 @@ func (s *Store) enforceCommunityPostLimit(authorID string, now time.Time) error 
 	return nil
 }
 
-func (s *Store) enforceUploadLimit(ownerID string, now time.Time) error {
+func (s *Store) enforceUploadLimit(queryer rowQuerier, ownerID string, now time.Time) error {
 	var accountStatus string
-	err := s.db.QueryRow(`SELECT account_status FROM users WHERE id = ?`, ownerID).Scan(&accountStatus)
+	err := queryer.QueryRow(`SELECT account_status FROM users WHERE id = ?`, ownerID).Scan(&accountStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return notFound("用户不存在")
 	}
@@ -74,7 +78,7 @@ func (s *Store) enforceUploadLimit(ownerID string, now time.Time) error {
 	}
 	start, end := ugcDayBounds(now)
 	var count int
-	if err := s.db.QueryRow(`
+	if err := queryer.QueryRow(`
 		SELECT COUNT(*) FROM uploads
 		WHERE owner_id = ? AND created_at >= ? AND created_at < ?
 	`, ownerID, timestamp(start), timestamp(end)).Scan(&count); err != nil {
@@ -84,4 +88,8 @@ func (s *Store) enforceUploadLimit(ownerID string, now time.Time) error {
 		return rateLimited(fmt.Sprintf("每天最多上传 %d 张图片，请明天再试", dailyUploadLimit))
 	}
 	return nil
+}
+
+func (s *Store) CheckUploadAllowed(ownerID string, now time.Time) error {
+	return s.enforceUploadLimit(s.db, ownerID, now)
 }

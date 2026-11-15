@@ -131,7 +131,10 @@ const decoratePost = (post) => {
             initial: (author.name || '宠').slice(0, 1),
             verified: Boolean(author.ownerVerified || author.studentVerified),
         },
-        images: (post.images || []).map((path) => ({path, url: mediaUrl(path)})),
+        images: (post.images || []).map((raw) => ({
+            path: String(raw).split('?')[0],
+            url: mediaUrl(raw),
+        })),
         timeText: relativeTime(post.createdAt),
     }
 }

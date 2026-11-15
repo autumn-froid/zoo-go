@@ -137,7 +137,21 @@ Page({
         wx.previewImage({
             current: event.currentTarget.dataset.src,
             urls: post.images.map((item) => item.url),
+            fail: () => this.refreshPostMedia(),
         })
+    },
+
+    onPostImageError() {
+        this.refreshPostMedia()
+    },
+
+    refreshPostMedia() {
+        const now = Date.now()
+        if (this.mediaRefreshAt && now - this.mediaRefreshAt < 60000) {
+            return
+        }
+        this.mediaRefreshAt = now
+        this.loadPosts(true, false)
     },
 
     async publish() {
@@ -157,7 +171,7 @@ Page({
                     const result = await upload(images[index].path)
                     images[index] = {
                         ...images[index],
-                        url: result.url,
+                        url: result.path,
                         src: mediaUrl(result.url),
                     }
                     this.setData({images})

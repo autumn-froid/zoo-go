@@ -522,11 +522,24 @@ func TestPaymentAndFulfillmentLifecycle(t *testing.T) {
 	if _, err := st.CheckIn(awarded.OrderID, student.ID, time.Now()); err != nil {
 		t.Fatalf("CheckIn() error = %v", err)
 	}
+	for _, filename := range []string{"one.jpg", "two.jpg"} {
+		if err := st.RecordUpload(student.ID, filename, filename, "image/jpeg", 128, time.Now()); err != nil {
+			t.Fatalf("RecordUpload(%s) error = %v", filename, err)
+		}
+	}
+	if err := st.RecordUpload(owner.ID, "owner.jpg", "owner.jpg", "image/jpeg", 128, time.Now()); err != nil {
+		t.Fatalf("RecordUpload(owner.jpg) error = %v", err)
+	}
 	if _, err := st.Complete(awarded.OrderID, domain.CompleteRequest{StudentID: student.ID, Photos: []string{"/uploads/one.jpg"}}, time.Now()); err == nil {
 		t.Fatal("Complete() with one photo succeeded, want validation error")
 	}
 	if _, err := st.Complete(awarded.OrderID, domain.CompleteRequest{StudentID: student.ID, Photos: []string{"/tmp/one.jpg", "/tmp/two.jpg"}}, time.Now()); err == nil {
 		t.Fatal("Complete() with non-platform photos succeeded, want validation error")
+	}
+	if _, err := st.Complete(awarded.OrderID, domain.CompleteRequest{
+		StudentID: student.ID, Photos: []string{"/uploads/owner.jpg", "/uploads/two.jpg"},
+	}, time.Now()); err == nil {
+		t.Fatal("Complete() with another user's photo succeeded, want validation error")
 	}
 	completed, err := st.Complete(awarded.OrderID, domain.CompleteRequest{
 		StudentID: student.ID, Photos: []string{"/uploads/one.jpg", "/uploads/two.jpg"},
@@ -960,6 +973,76 @@ func TestUploadDailyLimit(t *testing.T) {
 	}
 }
 
+func TestCommunityPostLimitIsAtomic(t *testing.T) {
+	st := newTestStore(t)
+	owner := createTestUser(t, st, "并发发帖用户")
+	now := time.Now()
+	const attempts = 12
+	errs := make(chan error, attempts)
+	var wg sync.WaitGroup
+	for index := 0; index < attempts; index++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			_, err := st.CreateCommunityPost(owner.ID, domain.CreatePostRequest{
+				Content: fmt.Sprintf("并发动态 %d", index),
+			}, now)
+			errs <- err
+		}(index)
+	}
+	wg.Wait()
+	close(errs)
+	successes := 0
+	limited := 0
+	for err := range errs {
+		if err == nil {
+			successes++
+			continue
+		}
+		var appErr *AppError
+		if errors.As(err, &appErr) && appErr.Status == httpStatusTooManyRequests {
+			limited++
+		}
+	}
+	if successes != newUserDailyPosts || limited != attempts-newUserDailyPosts {
+		t.Fatalf("successes=%d limited=%d, want %d/%d", successes, limited, newUserDailyPosts, attempts-newUserDailyPosts)
+	}
+}
+
+func TestUploadLimitIsAtomic(t *testing.T) {
+	st := newTestStore(t)
+	owner := createTestUser(t, st, "并发上传用户")
+	now := time.Now()
+	const attempts = 36
+	errs := make(chan error, attempts)
+	var wg sync.WaitGroup
+	for index := 0; index < attempts; index++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			filename := fmt.Sprintf("media_concurrent_%02d.jpg", index)
+			errs <- st.RecordUpload(owner.ID, filename, filename, "image/jpeg", 128, now)
+		}(index)
+	}
+	wg.Wait()
+	close(errs)
+	successes := 0
+	limited := 0
+	for err := range errs {
+		if err == nil {
+			successes++
+			continue
+		}
+		var appErr *AppError
+		if errors.As(err, &appErr) && appErr.Status == httpStatusTooManyRequests {
+			limited++
+		}
+	}
+	if successes != dailyUploadLimit || limited != attempts-dailyUploadLimit {
+		t.Fatalf("successes=%d limited=%d, want %d/%d", successes, limited, dailyUploadLimit, attempts-dailyUploadLimit)
+	}
+}
+
 func TestAdminCommunityQueueSortsRiskAndWaitingTime(t *testing.T) {
 	st := newTestStore(t)
 	owner := createTestUser(t, st, "审核队列用户")
@@ -987,6 +1070,22 @@ func TestAdminCommunityQueueSortsRiskAndWaitingTime(t *testing.T) {
 	if posts[0].RiskLevel != "HIGH" || posts[1].Content != pending[0].content || posts[2].Content != pending[2].content {
 		t.Fatalf("unexpected moderation order: %+v", posts)
 	}
+}
+
+func TestProfileAndPetRejectAnotherUsersUpload(t *testing.T) {
+	st := newTestStore(t)
+	owner := createTestUser(t, st, "资料用户")
+	other := createTestUser(t, st, "图片所有者")
+	if err := st.RecordUpload(other.ID, "other-user.jpg", "other.jpg", "image/jpeg", 128, time.Now()); err != nil {
+		t.Fatalf("RecordUpload() error = %v", err)
+	}
+	foreignImage := "/uploads/other-user.jpg?exp=1&sig=ignored"
+	_, err := st.UpdateProfile(owner.ID, domain.UpdateProfileRequest{Name: "资料用户", Avatar: foreignImage}, time.Now())
+	requireAppErrorStatus(t, err, 400)
+	_, err = st.CreatePet(owner.ID, domain.CreatePetRequest{
+		Name: "豆豆", Species: "狗", Image: foreignImage,
+	}, time.Now())
+	requireAppErrorStatus(t, err, 400)
 }
 
 const (

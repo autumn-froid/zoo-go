@@ -88,7 +88,7 @@ Page({
         try {
             let image = ''
             if (this.data.imagePath) {
-                image = (await upload(this.data.imagePath)).url
+                image = (await upload(this.data.imagePath)).path
             }
             await request('/v1/pets', {
                 method: 'POST',

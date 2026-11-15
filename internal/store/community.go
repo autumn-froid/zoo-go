@@ -108,9 +108,6 @@ func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostReques
 	if err != nil {
 		return domain.CommunityPost{}, err
 	}
-	if err := s.enforceCommunityPostLimit(authorID, now); err != nil {
-		return domain.CommunityPost{}, err
-	}
 	content := strings.TrimSpace(req.Content)
 	images := nonEmptyStrings(req.Images)
 	if content == "" && len(images) == 0 {
@@ -125,17 +122,9 @@ func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostReques
 	seen := map[string]bool{}
 	uniqueImages := images[:0]
 	for _, image := range images {
-		canonical, ok := canonicalUploadPath(image)
-		if !ok {
-			return domain.CommunityPost{}, validation("图片必须先上传到平台")
-		}
-		filename := strings.TrimPrefix(canonical, "/uploads/")
-		ownerID, err := s.UploadOwner(filename)
+		canonical, err := s.ensureUploadOwner(image, authorID)
 		if err != nil {
 			return domain.CommunityPost{}, err
-		}
-		if ownerID != authorID {
-			return domain.CommunityPost{}, validation("图片必须由当前用户上传")
 		}
 		if !seen[canonical] {
 			seen[canonical] = true
@@ -162,7 +151,15 @@ func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostReques
 		Content: content, Images: images, ModerationStatus: status,
 		ModerationReason: reason, RiskLevel: string(review.Level), CreatedAt: now, Mine: true,
 	}
-	if _, err := s.db.Exec(`
+	tx, err := s.db.Begin()
+	if err != nil {
+		return domain.CommunityPost{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.enforceCommunityPostLimit(tx, authorID, now); err != nil {
+		return domain.CommunityPost{}, err
+	}
+	if _, err := tx.Exec(`
 		INSERT INTO community_posts(
 			id, author_id, content, images_json, moderation_status,
 			moderation_reason, moderation_risk, created_at
@@ -170,6 +167,9 @@ func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostReques
 		VALUES(?, ?, ?, ?, ?, ?, ?, ?)
 	`, post.ID, authorID, post.Content, marshalJSON(post.Images), post.ModerationStatus,
 		post.ModerationReason, post.RiskLevel, timestamp(now)); err != nil {
+		return domain.CommunityPost{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return domain.CommunityPost{}, err
 	}
 	return post, nil
@@ -270,14 +270,21 @@ func (s *Store) RejectCommunityPost(id, reason string, now time.Time) error {
 }
 
 func (s *Store) RecordUpload(ownerID, filename, originalName, mimeType string, size int64, now time.Time) error {
-	if err := s.enforceUploadLimit(ownerID, now); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`
+	defer func() { _ = tx.Rollback() }()
+	if err := s.enforceUploadLimit(tx, ownerID, now); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
 		INSERT INTO uploads(id, owner_id, filename, original_name, mime_type, size_bytes, created_at)
 		VALUES(?, ?, ?, ?, ?, ?, ?)
-	`, newID("upload"), ownerID, filename, originalName, mimeType, size, timestamp(now))
-	return err
+	`, newID("upload"), ownerID, filename, originalName, mimeType, size, timestamp(now)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) UploadOwner(filename string) (string, error) {

@@ -58,6 +58,10 @@ func New(s *store.Store, config Config, logger *slog.Logger) *Server {
 		config.MediaURLTTL = defaultMediaURLTTL
 	}
 	signingKey := strings.TrimSpace(config.MediaSigningKey)
+	if signingKey != "" && len([]byte(signingKey)) < 16 {
+		logger.Warn("UPLOAD_SIGNING_KEY is too short; using an ephemeral key instead", "minimum_bytes", 16)
+		signingKey = ""
+	}
 	if signingKey == "" {
 		signingKey = randomMediaSigningKey()
 		logger.Warn("UPLOAD_SIGNING_KEY is not set; using an ephemeral key, media URLs will expire after restart")
