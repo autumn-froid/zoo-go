@@ -24,6 +24,16 @@ if [[ -n "${WECHAT_APP_SECRET:-}" && "${#WECHAT_APP_SECRET}" -ne 32 ]]; then
   exit 1
 fi
 
+if [[ -z "${PII_ENCRYPTION_KEY:-}" ]]; then
+  echo "PII_ENCRYPTION_KEY 未配置。请生成后写入 .env.local：openssl rand -hex 32" >&2
+  exit 1
+fi
+
+if [[ -z "${PII_HASH_KEY:-}" ]]; then
+  echo "PII_HASH_KEY 未配置。请另外生成一个不同的值写入 .env.local：openssl rand -hex 32" >&2
+  exit 1
+fi
+
 cd "$ROOT_DIR"
 
 start_openobserve() {

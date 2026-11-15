@@ -152,19 +152,36 @@
             <view class="tiny muted note-count">{{note.length}} / 300</view>
         </view>
 
+        <view wx:if="{{!identityVerified}}" class="card identity-warning" bindtap="goIdentity">
+            <view class="grow">
+                <view class="small bold">发布前需完成实名认证</view>
+                <view class="tiny muted">实名资料加密存储，审核通过后才能发布任务</view>
+            </view>
+            <text class="identity-link">去认证 ›</text>
+        </view>
+
         <view class="card form-card safety-card">
             <view class="safety-row">
                 <view class="grow">
-                    <view class="small bold">宠物无攻击性，已完成安全确认</view>
-                    <view class="tiny muted">如存在咬人、强应激或伤病，请先联系客服</view>
+                    <view class="small bold">已如实告知宠物健康与风险</view>
+                    <view class="tiny muted">包括疾病、传染风险、攻击史、过敏和用药情况</view>
                 </view>
                 <switch color="#F97316" checked="{{safetyConfirmed}}" bindchange="toggleSafety" />
             </view>
             <view class="divider"></view>
+            <view class="agreement-row" data-field="cameraConfirmed" bindtap="toggleConsent">
+                <view class="agreement-box {{cameraConfirmed ? 'agreement-checked' : ''}}">{{cameraConfirmed ? '✓' : ''}}</view>
+                <text class="tiny muted">已披露室内摄像头/录音设备，并承诺仅用于照护与安全目的</text>
+            </view>
+            <view class="agreement-row" data-field="mediaConsent" bindtap="toggleConsent">
+                <view class="agreement-box {{mediaConsent ? 'agreement-checked' : ''}}">{{mediaConsent ? '✓' : ''}}</view>
+                <text class="tiny muted">同意宠托师为履约和争议处理拍摄必要照片，不得用于传播或宣传</text>
+            </view>
             <view class="agreement-row" bindtap="toggleAgreement">
                 <view class="agreement-box {{agreementAccepted ? 'agreement-checked' : ''}}">{{agreementAccepted ? '✓' : ''}}</view>
-                <text class="tiny muted">我已阅读并同意《服务协议》《隐私政策》与退款规则</text>
+                <text class="tiny muted">我已阅读并同意《上门宠物照护服务三方确认书》</text>
             </view>
+            <view class="agreement-link" bindtap="showAgreement">查看协议全文 ›</view>
         </view>
     </block>
 </view>

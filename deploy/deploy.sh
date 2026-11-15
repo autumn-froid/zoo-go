@@ -12,6 +12,32 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
+random_hex() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+    return
+  fi
+  od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
+}
+
+ensure_secret() {
+  local key="$1"
+  if grep -Eq "^${key}=.+" .env; then
+    return
+  fi
+  local value
+  value="$(random_hex)"
+  if grep -Eq "^${key}=" .env; then
+    sed -i.bak "s|^${key}=.*|${key}=${value}|" .env
+    rm -f .env.bak
+  else
+    printf '\n# Auto-generated once; back up before rotating.\n%s=%s\n' "$key" "$value" >> .env
+  fi
+}
+
+ensure_secret PII_ENCRYPTION_KEY
+ensure_secret PII_HASH_KEY
+
 mkdir -p "$ROOT_DIR/data/uploads" "$ROOT_DIR/data/openobserve" "$ROOT_DIR/secrets"
 # Container runs as uid 10001; host-mounted SQLite needs write access.
 if [[ "$(id -u)" -eq 0 ]]; then

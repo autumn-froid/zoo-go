@@ -70,13 +70,29 @@ func (s *Store) SubmitStudentVerification(userID string, req domain.SubmitStuden
 
 	nowText := timestamp(now)
 	applicationID := newID("sv")
+	realName, err := s.encryptPII(piiScopeStudentName, req.RealName)
+	if err != nil {
+		return domain.Student{}, err
+	}
+	studentNo, err := s.encryptPII(piiScopeStudentNo, req.StudentNo)
+	if err != nil {
+		return domain.Student{}, err
+	}
+	major, err := s.encryptPII(piiScopeStudentMajor, req.Major)
+	if err != nil {
+		return domain.Student{}, err
+	}
+	chsiCode, err := s.encryptPII(piiScopeCHSICode, req.ChsiCode)
+	if err != nil {
+		return domain.Student{}, err
+	}
 	_, err = tx.Exec(`
 		INSERT INTO student_verifications(
 			id, user_id, real_name, school, student_no, major, enrollment_year,
 			chsi_code, chsi_code_hash, status, submitted_at, created_at, updated_at
 		) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
-	`, applicationID, userID, req.RealName, req.School, req.StudentNo, req.Major,
-		req.EnrollmentYear, req.ChsiCode, hashToken(req.ChsiCode), nowText, nowText, nowText)
+	`, applicationID, userID, realName, req.School, studentNo, major,
+		req.EnrollmentYear, chsiCode, s.lookupPII(piiScopeCHSICode, req.ChsiCode), nowText, nowText, nowText)
 	if err != nil {
 		message := strings.ToLower(err.Error())
 		if strings.Contains(message, "chsi_code_hash") {
@@ -133,14 +149,27 @@ func (s *Store) StudentVerificationApplications(status string) ([]domain.Student
 	applications := []domain.StudentVerificationApplication{}
 	for rows.Next() {
 		var application domain.StudentVerificationApplication
+		var realName, studentNo, major, chsiCode string
 		var submittedAt string
 		var reviewedAt, validUntil sql.NullString
 		if err := rows.Scan(
 			&application.ID, &application.UserID, &application.UserName,
-			&application.RealName, &application.School, &application.StudentNo,
-			&application.Major, &application.EnrollmentYear, &application.ChsiCode,
+			&realName, &application.School, &studentNo,
+			&major, &application.EnrollmentYear, &chsiCode,
 			&application.Status, &application.ReviewNote, &submittedAt, &reviewedAt, &validUntil,
 		); err != nil {
+			return nil, err
+		}
+		if application.RealName, err = s.decryptPII(piiScopeStudentName, realName); err != nil {
+			return nil, err
+		}
+		if application.StudentNo, err = s.decryptPII(piiScopeStudentNo, studentNo); err != nil {
+			return nil, err
+		}
+		if application.Major, err = s.decryptPII(piiScopeStudentMajor, major); err != nil {
+			return nil, err
+		}
+		if application.ChsiCode, err = s.decryptPII(piiScopeCHSICode, chsiCode); err != nil {
 			return nil, err
 		}
 		application.SubmittedAt = parseTimestamp(submittedAt)

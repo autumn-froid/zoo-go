@@ -17,9 +17,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"zoo-go/internal/agreement"
 	"zoo-go/internal/contentsecurity"
 	"zoo-go/internal/domain"
 	"zoo-go/internal/payment"
@@ -32,6 +34,8 @@ type testAPI struct {
 }
 
 type fakePaymentGateway struct{}
+
+var httpIdentitySequence atomic.Int64
 
 type fakeContentSecurityClient struct {
 	text     contentsecurity.TextResult
@@ -127,6 +131,36 @@ func (api *testAPI) loginWeChat(t *testing.T, openID, name string) (string, stri
 		t.Fatalf("store.Login() error = %v", err)
 	}
 	return session.Token, session.Profile.ID
+}
+
+func (api *testAPI) verifyIdentity(t *testing.T, token, name string) {
+	t.Helper()
+	result := api.request(t, http.MethodPost, "/v1/identity/verification", token, map[string]any{
+		"realName": name, "idNumber": httpTestIdentityNumber(), "consent": true,
+		"consentVersion": agreement.IdentityConsentVersion,
+	}, http.StatusCreated)
+	verificationID := result["data"].(map[string]any)["id"].(string)
+	api.adminRequest(t, http.MethodPost, "/v1/admin/identity-verifications/"+verificationID+"/approve", nil, http.StatusOK)
+}
+
+func httpTestIdentityNumber() string {
+	base := fmt.Sprintf("11010519900101%03d", httpIdentitySequence.Add(1)%1000)
+	weights := [...]int{7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2}
+	checks := "10X98765432"
+	sum := 0
+	for index, char := range base {
+		sum += int(char-'0') * weights[index]
+	}
+	return base + string(checks[sum%11])
+}
+
+func httpAgreementFields(role string) (string, []string) {
+	definition, _ := agreement.Current(role)
+	items := make([]string, 0, len(definition.RequiredItems))
+	for _, item := range definition.RequiredItems {
+		items = append(items, item.Code)
+	}
+	return definition.Version, items
 }
 
 func (api *testAPI) request(t *testing.T, method, path, token string, body any, wantStatus int) map[string]any {
@@ -280,6 +314,8 @@ func TestAuthenticatedEndToEndAndCommunity(t *testing.T) {
 	api := newTestAPI(t)
 	ownerToken, _ := api.loginWeChat(t, "wx_owner_e2e", "主人A")
 	studentToken, studentID := api.loginWeChat(t, "wx_student_e2e", "学生A")
+	api.verifyIdentity(t, ownerToken, "主人A")
+	api.verifyIdentity(t, studentToken, "学生A")
 
 	api.request(t, http.MethodPost, "/v1/student/verification", studentToken, map[string]any{
 		"realName": "学生A", "school": "中国农业大学", "studentNo": "20240001",
@@ -305,6 +341,7 @@ func TestAuthenticatedEndToEndAndCommunity(t *testing.T) {
 	petID := petResult["data"].(map[string]any)["id"].(string)
 
 	serviceDate := time.Now().AddDate(0, 0, 2).Format("2006-01-02")
+	ownerAgreementVersion, ownerAgreementItems := httpAgreementFields(agreement.RoleOwner)
 	taskResult := api.request(t, http.MethodPost, "/v1/tasks", ownerToken, map[string]any{
 		"petId": petID, "services": []string{"喂食", "换水", "拍照反馈"},
 		"serviceDate": serviceDate, "timeWindow": "09:00-10:00", "mode": "bid",
@@ -312,12 +349,15 @@ func TestAuthenticatedEndToEndAndCommunity(t *testing.T) {
 		"locationName": "朗润园东门", "latitude": 39.9998, "longitude": 116.3269,
 		"addressDetail": "3号楼2单元401", "note": "按清单完成",
 		"safetyConfirmed": true, "agreementAccepted": true,
+		"agreementVersion": ownerAgreementVersion, "agreementItems": ownerAgreementItems,
 	}, http.StatusCreated)
 	task := taskResult["data"].(map[string]any)
 	taskID := task["id"].(string)
 
+	sitterAgreementVersion, sitterAgreementItems := httpAgreementFields(agreement.RoleSitter)
 	bidResult := api.request(t, http.MethodPost, "/v1/tasks/"+taskID+"/bids", studentToken, map[string]any{
-		"priceFen": 4500, "message": "可以准时到",
+		"priceFen": 4500, "message": "可以准时到", "agreementAccepted": true,
+		"agreementVersion": sitterAgreementVersion, "agreementItems": sitterAgreementItems,
 	}, http.StatusOK)
 	bidID := bidResult["data"].(map[string]any)["myBid"].(map[string]any)["id"].(string)
 
@@ -329,6 +369,11 @@ func TestAuthenticatedEndToEndAndCommunity(t *testing.T) {
 
 	awarded := api.request(t, http.MethodPost, "/v1/tasks/"+taskID+"/award", ownerToken, map[string]any{"bidId": bidID}, http.StatusOK)
 	orderID := awarded["data"].(map[string]any)["orderId"].(string)
+	agreementSnapshot := api.request(t, http.MethodGet, "/v1/orders/"+orderID+"/agreement", ownerToken, nil, http.StatusOK)
+	agreementData := agreementSnapshot["data"].(map[string]any)
+	if agreementData["version"] != ownerAgreementVersion || agreementData["owner"] == nil || agreementData["sitter"] == nil {
+		t.Fatalf("order agreement snapshot = %+v", agreementData)
+	}
 	challenge := api.request(t, http.MethodPost, "/v1/orders/"+orderID+"/payments", ownerToken, nil, http.StatusCreated)
 	challengeData := challenge["data"].(map[string]any)
 	if _, _, err := api.st.ApplyPaymentNotice(domain.PaymentNotice{
@@ -364,6 +409,55 @@ func TestAuthenticatedEndToEndAndCommunity(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("community feed length = %d, want 1", len(items))
 	}
+}
+
+func TestIdentityVerificationAndPublishGate(t *testing.T) {
+	api := newTestAPI(t)
+	token, _ := api.loginWeChat(t, "wx_identity_api", "实名接口用户")
+	api.request(t, http.MethodPost, "/v1/identity/verification", token, map[string]any{
+		"realName": "实名接口用户", "idNumber": "110105194912310021", "consent": true,
+		"consentVersion": agreement.IdentityConsentVersion,
+	}, http.StatusBadRequest)
+	created := api.request(t, http.MethodPost, "/v1/identity/verification", token, map[string]any{
+		"realName": "实名接口用户", "idNumber": "11010519491231002X", "consent": true,
+		"consentVersion": agreement.IdentityConsentVersion,
+	}, http.StatusCreated)
+	verification := created["data"].(map[string]any)
+	verificationID := verification["id"].(string)
+	if verification["idNumber"] != nil || verification["idNumberMasked"] != "110***********002X" {
+		t.Fatalf("identity response leaked full id: %+v", verification)
+	}
+	current := api.request(t, http.MethodGet, "/v1/identity/verification", token, nil, http.StatusOK)
+	currentVerification := current["data"].(map[string]any)["verification"].(map[string]any)
+	if currentVerification["status"] != domain.IdentityPending || currentVerification["idNumber"] != nil {
+		t.Fatalf("current identity verification = %+v", currentVerification)
+	}
+	applications := api.adminRequest(t, http.MethodGet, "/v1/admin/identity-verifications?status=PENDING", nil, http.StatusOK)
+	items := applications["data"].([]any)
+	if len(items) != 1 || items[0].(map[string]any)["idNumber"] != "11010519491231002X" {
+		t.Fatalf("admin identity applications = %+v", items)
+	}
+	api.adminRequest(t, http.MethodPost, "/v1/admin/identity-verifications/"+verificationID+"/approve", nil, http.StatusOK)
+	me := api.request(t, http.MethodGet, "/v1/auth/me", token, nil, http.StatusOK)
+	if me["data"].(map[string]any)["verified"] != true {
+		t.Fatalf("verified profile = %+v", me["data"])
+	}
+
+	unverifiedToken, _ := api.loginWeChat(t, "wx_unverified_owner", "未实名主人")
+	petResult := api.request(t, http.MethodPost, "/v1/pets", unverifiedToken, map[string]any{
+		"name": "豆豆", "species": "狗",
+	}, http.StatusCreated)
+	petID := petResult["data"].(map[string]any)["id"].(string)
+	ownerVersion, ownerItems := httpAgreementFields(agreement.RoleOwner)
+	serviceDate := time.Now().AddDate(0, 0, 2).Format("2006-01-02")
+	api.request(t, http.MethodPost, "/v1/tasks", unverifiedToken, map[string]any{
+		"petId": petID, "services": []string{"喂食"}, "serviceDate": serviceDate,
+		"timeWindow": "09:00-10:00", "mode": "bid", "budgetFen": 6000,
+		"bidDurationMinutes": 60, "community": "马连洼·朗润园附近",
+		"locationName": "朗润园东门", "latitude": 39.9998, "longitude": 116.3269,
+		"addressDetail": "3号楼2单元401", "safetyConfirmed": true, "agreementAccepted": true,
+		"agreementVersion": ownerVersion, "agreementItems": ownerItems,
+	}, http.StatusForbidden)
 }
 
 func TestCommunityPostModerationReviewFlow(t *testing.T) {
@@ -738,7 +832,8 @@ func TestAdminDashboardUserControlsAndAudit(t *testing.T) {
 func TestAdminDispatchComparisonUsesRealLocatedData(t *testing.T) {
 	api := newTestAPI(t)
 	now := time.Now()
-	_, ownerID := api.loginWeChat(t, "wx_dispatch_owner", "派单主人")
+	ownerToken, ownerID := api.loginWeChat(t, "wx_dispatch_owner", "派单主人")
+	api.verifyIdentity(t, ownerToken, "派单主人")
 	_, firstStudentID := api.loginWeChat(t, "wx_dispatch_student_1", "就近学生")
 	_, secondStudentID := api.loginWeChat(t, "wx_dispatch_student_2", "远一些学生")
 	for index, studentID := range []string{firstStudentID, secondStudentID} {
@@ -769,6 +864,7 @@ func TestAdminDispatchComparisonUsesRealLocatedData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePet() error = %v", err)
 	}
+	ownerAgreementVersion, ownerAgreementItems := httpAgreementFields(agreement.RoleOwner)
 	if _, err := api.st.PublishTask(domain.PublishTaskRequest{
 		OwnerID: ownerID, PetID: pet.ID, Services: []string{"喂食", "换水"},
 		ServiceDate: now.AddDate(0, 0, 2).Format("2006-01-02"), TimeWindow: "09:00-10:00",
@@ -776,6 +872,7 @@ func TestAdminDispatchComparisonUsesRealLocatedData(t *testing.T) {
 		Community: "马连洼·朗润园附近", LocationName: "朗润园东门",
 		Latitude: 39.9998, Longitude: 116.3269, AddressDetail: "3号楼2单元401",
 		SafetyConfirmed: true, AgreementAccepted: true,
+		AgreementVersion: ownerAgreementVersion, AgreementItems: ownerAgreementItems,
 	}, now); err != nil {
 		t.Fatalf("PublishTask() error = %v", err)
 	}
@@ -803,6 +900,8 @@ func TestRefundRequestAndAdminApproval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("student Login() error = %v", err)
 	}
+	api.verifyIdentity(t, ownerSession.Token, "退款主人")
+	api.verifyIdentity(t, studentSession.Token, "退款学生")
 	if _, err := api.st.SubmitStudentVerification(studentSession.Profile.ID, domain.SubmitStudentVerificationRequest{
 		RealName: "退款学生", School: "中国农业大学", StudentNo: "20240002",
 		Major: "动物医学", EnrollmentYear: 2024, ChsiCode: "REFUND20261105A1",
@@ -823,6 +922,7 @@ func TestRefundRequestAndAdminApproval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePet() error = %v", err)
 	}
+	ownerAgreementVersion, ownerAgreementItems := httpAgreementFields(agreement.RoleOwner)
 	task, err := api.st.PublishTask(domain.PublishTaskRequest{
 		OwnerID: ownerSession.Profile.ID, PetID: pet.ID, Services: []string{"喂食", "换水"},
 		ServiceDate: now.AddDate(0, 0, 2).Format("2006-01-02"), TimeWindow: "09:00-10:00",
@@ -830,11 +930,16 @@ func TestRefundRequestAndAdminApproval(t *testing.T) {
 		Community: "马连洼·朗润园附近", LocationName: "朗润园东门",
 		Latitude: 39.9998, Longitude: 116.3269, AddressDetail: "3号楼2单元401",
 		SafetyConfirmed: true, AgreementAccepted: true,
+		AgreementVersion: ownerAgreementVersion, AgreementItems: ownerAgreementItems,
 	}, now)
 	if err != nil {
 		t.Fatalf("PublishTask() error = %v", err)
 	}
-	bid, err := api.st.SubmitBid(task.ID, domain.SubmitBidRequest{StudentID: studentSession.Profile.ID, PriceFen: 4500}, now)
+	sitterAgreementVersion, sitterAgreementItems := httpAgreementFields(agreement.RoleSitter)
+	bid, err := api.st.SubmitBid(task.ID, domain.SubmitBidRequest{
+		StudentID: studentSession.Profile.ID, PriceFen: 4500, AgreementAccepted: true,
+		AgreementVersion: sitterAgreementVersion, AgreementItems: sitterAgreementItems,
+	}, now)
 	if err != nil {
 		t.Fatalf("SubmitBid() error = %v", err)
 	}

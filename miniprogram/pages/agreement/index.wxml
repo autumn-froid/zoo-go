@@ -1,0 +1,25 @@
+<nav-bar title="服务协议" back />
+
+<view class="page agreement-page">
+    <view wx:if="{{loading}}" class="loading-wrap">正在加载协议…</view>
+
+    <block wx:elif="{{agreement}}">
+        <view class="card agreement-card">
+            <view class="agreement-title">{{agreement.title}}</view>
+            <view class="agreement-version">版本 {{agreement.version}} · 内容摘要 {{agreement.contentHash}}</view>
+            <scroll-view class="agreement-content" scroll-y>
+                <text>{{agreement.content}}</text>
+            </scroll-view>
+        </view>
+
+        <view class="card checklist-card">
+            <view class="checklist-title">本角色必须确认的事项</view>
+            <view class="checklist-item" wx:for="{{agreement.requiredItems}}" wx:key="code">
+                <text class="checklist-mark">✓</text>
+                <text>{{item.label}}</text>
+            </view>
+        </view>
+
+        <view class="agreement-footnote">平台会保存本版本、内容摘要、确认时间、确认角色和必要的安全日志。试跑阶段为在线确认留痕；高风险订单将另行接入可靠电子签名。</view>
+    </block>
+</view>

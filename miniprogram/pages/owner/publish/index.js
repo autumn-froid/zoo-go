@@ -25,14 +25,20 @@ Page({
         budget: 60,
         note: '',
         safetyConfirmed: false,
+        cameraConfirmed: false,
+        mediaConsent: false,
         agreementAccepted: false,
+        agreement: null,
+        agreementVersion: '',
+        identityVerified: false,
     },
 
     async onLoad() {
         try {
-            const [meta, home] = await Promise.all([
+            const [meta, home, agreement] = await Promise.all([
                 request('/v1/meta'),
                 request('/v1/owner/home'),
+                request('/v1/agreements/current?role=owner'),
             ])
             const pets = home.pets || []
             const day = meta.days[Math.min(2, meta.days.length - 1)] || meta.days[0]
@@ -60,6 +66,9 @@ Page({
                 locationName: savedAddress ? savedAddress.locationName || '' : '',
                 latitude: savedAddress ? savedAddress.latitude || 0 : 0,
                 longitude: savedAddress ? savedAddress.longitude || 0 : 0,
+                agreement,
+                agreementVersion: agreement.version,
+                identityVerified: Boolean(home.profile && home.profile.verified),
             })
             this.ready = true
             wx.setNavigationBarTitle({title: '发布喂宠任务'})
@@ -85,6 +94,7 @@ Page({
                 pets: pets.map((pet) => ({...pet, image: mediaUrl(pet.image)})),
                 petId: selected,
                 addressDetail: this.data.addressDetail || (address ? address.detail : ''),
+                identityVerified: Boolean(home.profile && home.profile.verified),
             })
         } catch (error) {
             wx.showToast({title: error.message, icon: 'none'})
@@ -186,6 +196,21 @@ Page({
         this.setData({agreementAccepted: !this.data.agreementAccepted})
     },
 
+    toggleConsent(event) {
+        const field = event.currentTarget.dataset.field
+        if (field) {
+            this.setData({[field]: !this.data[field]})
+        }
+    },
+
+    showAgreement() {
+        wx.navigateTo({url: '/pages/agreement/index?role=owner'})
+    },
+
+    goIdentity() {
+        wx.navigateTo({url: '/pages/identity/index'})
+    },
+
     async submit() {
         if (this.data.submitting) {
             return
@@ -193,6 +218,19 @@ Page({
         const services = this.data.serviceOptions.filter((item) => item.selected).map((item) => item.value)
         if (!this.data.petId) {
             wx.showToast({title: '请先添加一只宠物', icon: 'none'})
+            return
+        }
+        if (!this.data.identityVerified) {
+            wx.showModal({
+                title: '请先完成实名认证',
+                content: '发布任务前需要核验交易双方真实身份。实名资料审核通过后即可发布。',
+                confirmText: '去认证',
+                success: (result) => {
+                    if (result.confirm) {
+                        this.goIdentity()
+                    }
+                },
+            })
             return
         }
         if (!services.length) {
@@ -203,7 +241,15 @@ Page({
             wx.showToast({title: '请确认宠物安全情况', icon: 'none'})
             return
         }
-        if (!this.data.agreementAccepted) {
+        if (!this.data.cameraConfirmed) {
+            wx.showToast({title: '请如实披露室内摄像头与录音设备', icon: 'none'})
+            return
+        }
+        if (!this.data.mediaConsent) {
+            wx.showToast({title: '请确认履约照片使用范围', icon: 'none'})
+            return
+        }
+        if (!this.data.agreementAccepted || !this.data.agreementVersion) {
             wx.showToast({title: '请先阅读并同意服务协议', icon: 'none'})
             return
         }
@@ -235,6 +281,13 @@ Page({
                     addressDetail: this.data.addressDetail,
                     note: this.data.note,
                     safetyConfirmed: true,
+                    agreementVersion: this.data.agreementVersion,
+                    agreementItems: [
+                        'owner_health_truth',
+                        'owner_camera_disclosure',
+                        'owner_media_consent',
+                        'service_agreement',
+                    ],
                     agreementAccepted: true,
                 },
             })

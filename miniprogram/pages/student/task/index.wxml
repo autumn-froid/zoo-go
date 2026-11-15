@@ -57,6 +57,30 @@
             <view class="message-label">给主人的说明（选填）</view>
             <textarea class="textarea message-input" maxlength="200" value="{{message}}" bindinput="onMessageInput" placeholder="例如：本小区附近，可提前 10 分钟到…" />
 
+            <view wx:if="{{!identityVerified}}" class="identity-warning" bindtap="goIdentity">
+                <view class="grow">
+                    <view class="small bold">报价前需完成实名认证</view>
+                    <view class="tiny muted">姓名与身份证件号码将加密存储</view>
+                </view>
+                <text class="identity-link">去认证 ›</text>
+            </view>
+
+            <view class="consent-list">
+                <view class="consent-row" data-field="identityConfirmed" bindtap="toggleConsent">
+                    <view class="consent-box {{identityConfirmed ? 'consent-checked' : ''}}">{{identityConfirmed ? '✓' : ''}}</view>
+                    <text class="tiny muted">我确认实名信息真实，并同意平台为核验、风控和争议处理留档</text>
+                </view>
+                <view class="consent-row" data-field="visitRecordConfirmed" bindtap="toggleConsent">
+                    <view class="consent-box {{visitRecordConfirmed ? 'consent-checked' : ''}}">{{visitRecordConfirmed ? '✓' : ''}}</view>
+                    <text class="tiny muted">我同意按订单要求签到、拍摄上门与完成凭证，并如实记录异常</text>
+                </view>
+                <view class="consent-row" data-field="agreementAccepted" bindtap="toggleConsent">
+                    <view class="consent-box {{agreementAccepted ? 'consent-checked' : ''}}">{{agreementAccepted ? '✓' : ''}}</view>
+                    <text class="tiny muted">我已阅读并同意《上门宠物照护服务三方确认书》</text>
+                </view>
+                <view class="agreement-link" bindtap="showAgreement">查看协议全文 ›</view>
+            </view>
+
             <button class="btn-primary quote-submit" loading="{{submitting}}" disabled="{{submitting || !canQuote}}" bindtap="submitBid">{{quoteTitle}}</button>
             <view class="tiny muted quote-rule">报价不得超过主人预算，低于 ¥20 无效；每条有效报价最多修改 2 次。</view>
         </view>

@@ -18,6 +18,7 @@ import (
 	"zoo-go/internal/moderation"
 	"zoo-go/internal/observability"
 	"zoo-go/internal/payment"
+	"zoo-go/internal/security"
 	"zoo-go/internal/store"
 )
 
@@ -50,7 +51,12 @@ func main() {
 		}
 	}()
 
-	st, err := store.New(*dataFile)
+	piiCipher, err := security.NewCipher(os.Getenv("PII_ENCRYPTION_KEY"), os.Getenv("PII_HASH_KEY"))
+	if err != nil {
+		logger.Error("initialize PII encryption; set PII_ENCRYPTION_KEY and PII_HASH_KEY", "error", err)
+		os.Exit(1)
+	}
+	st, err := store.NewWithOptions(*dataFile, store.Options{PII: piiCipher})
 	if err != nil {
 		logger.Error("initialize store", "error", err)
 		os.Exit(1)

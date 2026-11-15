@@ -7,13 +7,18 @@ import (
 	"strings"
 	"time"
 
+	"zoo-go/internal/agreement"
 	"zoo-go/internal/domain"
 	"zoo-go/internal/geo"
 )
 
 func (s *Store) PublishTask(req domain.PublishTaskRequest, now time.Time) (domain.TaskView, error) {
-	if _, err := s.userByID(req.OwnerID); err != nil {
+	owner, err := s.userByID(req.OwnerID)
+	if err != nil {
 		return domain.TaskView{}, err
+	}
+	if !owner.OwnerVerified {
+		return domain.TaskView{}, forbidden("请先完成实名认证后再发布任务")
 	}
 	pet, err := s.petByOwner(req.PetID, req.OwnerID)
 	if err != nil {
@@ -38,6 +43,9 @@ func (s *Store) PublishTask(req domain.PublishTaskRequest, now time.Time) (domai
 	}
 	if !req.SafetyConfirmed || !req.AgreementAccepted {
 		return domain.TaskView{}, validation("请确认宠物安全情况并同意服务协议")
+	}
+	if err := agreement.Validate(agreement.RoleOwner, req.AgreementVersion, req.AgreementItems); err != nil {
+		return domain.TaskView{}, validation("请逐项阅读并同意当前版本的宠物照护服务协议")
 	}
 	areas, err := s.serviceAreaNames()
 	if err != nil {
@@ -123,6 +131,22 @@ func (s *Store) PublishTask(req domain.PublishTaskRequest, now time.Time) (domai
 		return domain.TaskView{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	encryptedLocationName, err := s.encryptPII(piiScopeTaskLocation, task.LocationName)
+	if err != nil {
+		return domain.TaskView{}, err
+	}
+	encryptedAddressDetail, err := s.encryptPII(piiScopeTaskAddress, task.AddressDetail)
+	if err != nil {
+		return domain.TaskView{}, err
+	}
+	encryptedOwnerDetail, err := s.encryptPII(piiScopeAddressDetail, addressDetail)
+	if err != nil {
+		return domain.TaskView{}, err
+	}
+	encryptedAddressName, err := s.encryptPII(piiScopeAddressName, locationName)
+	if err != nil {
+		return domain.TaskView{}, err
+	}
 	if _, err := tx.Exec(`
 		INSERT INTO tasks(id, owner_id, pet_id, pet_snapshot, mode, status, budget_fen, price_fen,
 		                  service_date, service_date_text, time_window, start_at, services_json,
@@ -132,8 +156,8 @@ func (s *Store) PublishTask(req domain.PublishTaskRequest, now time.Time) (domai
 		VALUES(?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', '', '[]', 0, 1, ?)
 	`, task.ID, task.OwnerID, task.PetID, marshalJSON(task.Pet), task.Mode, task.Status,
 		task.BudgetFen, task.ServiceDate, task.ServiceDateText, task.TimeWindow, timestamp(task.StartAt),
-		marshalJSON(task.Services), task.Community, task.LocationName, task.Latitude, task.Longitude,
-		task.AddressMasked, task.AddressDetail, task.Note,
+		marshalJSON(task.Services), task.Community, encryptedLocationName, task.Latitude, task.Longitude,
+		task.AddressMasked, encryptedAddressDetail, task.Note,
 		marshalJSON(task.Checklist), timestamp(task.BidDeadlineAt), timestamp(task.CreatedAt)); err != nil {
 		return domain.TaskView{}, err
 	}
@@ -143,7 +167,11 @@ func (s *Store) PublishTask(req domain.PublishTaskRequest, now time.Time) (domai
 		ON CONFLICT(owner_id) DO UPDATE SET community = excluded.community, detail = excluded.detail,
 			location_name = excluded.location_name, latitude = excluded.latitude,
 			longitude = excluded.longitude, updated_at = excluded.updated_at
-	`, req.OwnerID, community, addressDetail, locationName, locationPoint.Latitude, locationPoint.Longitude, timestamp(now)); err != nil {
+	`, req.OwnerID, community, encryptedOwnerDetail, encryptedAddressName, locationPoint.Latitude, locationPoint.Longitude, timestamp(now)); err != nil {
+		return domain.TaskView{}, err
+	}
+	if err := s.recordAgreementAcceptanceTx(tx, task.ID, "", req.OwnerID, agreement.RoleOwner,
+		req.AgreementVersion, req.AgreementItems, req.ClientIP, req.UserAgent, now); err != nil {
 		return domain.TaskView{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -178,6 +206,12 @@ func snapshotPet(pet domain.Pet) domain.PetSnapshot {
 }
 
 func (s *Store) SubmitBid(taskID string, req domain.SubmitBidRequest, now time.Time) (domain.TaskView, error) {
+	if !req.AgreementAccepted {
+		return domain.TaskView{}, validation("请逐项阅读并同意当前版本的服务协议")
+	}
+	if err := agreement.Validate(agreement.RoleSitter, req.AgreementVersion, req.AgreementItems); err != nil {
+		return domain.TaskView{}, validation("请逐项阅读并同意当前版本的宠托师服务协议")
+	}
 	if err := s.expireStudentVerifications(now); err != nil {
 		return domain.TaskView{}, err
 	}
@@ -191,12 +225,15 @@ func (s *Store) SubmitBid(taskID string, req domain.SubmitBidRequest, now time.T
 		}
 		return domain.TaskView{}, forbidden("学生认证未通过，暂不能报价")
 	}
+	if !student.OwnerVerified {
+		return domain.TaskView{}, forbidden("请先完成实名认证后再报价")
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return domain.TaskView{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	task, err := scanTask(tx.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, taskID))
+	task, err := s.scanTask(tx.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, taskID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TaskView{}, notFound("任务不存在")
 	}
@@ -285,6 +322,10 @@ func (s *Store) SubmitBid(taskID string, req domain.SubmitBidRequest, now time.T
 	if _, err := tx.Exec(`UPDATE tasks SET version = version + 1 WHERE id = ?`, taskID); err != nil {
 		return domain.TaskView{}, err
 	}
+	if err := s.recordAgreementAcceptanceTx(tx, taskID, bidID, req.StudentID, agreement.RoleSitter,
+		req.AgreementVersion, req.AgreementItems, req.ClientIP, req.UserAgent, now); err != nil {
+		return domain.TaskView{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return domain.TaskView{}, err
 	}
@@ -301,7 +342,7 @@ func (s *Store) AwardTask(taskID string, req domain.AwardRequest, now time.Time)
 		return domain.TaskView{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	task, err := scanTask(tx.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, taskID))
+	task, err := s.scanTask(tx.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, taskID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TaskView{}, notFound("任务不存在")
 	}
@@ -344,6 +385,17 @@ func (s *Store) AwardTask(taskID string, req domain.AwardRequest, now time.Time)
 	}, now) {
 		return domain.TaskView{}, conflict("该学生认证状态异常")
 	}
+	ownerAccepted, err := s.agreementAcceptedTx(tx, taskID, req.OwnerID, agreement.RoleOwner)
+	if err != nil {
+		return domain.TaskView{}, err
+	}
+	sitterAccepted, err := s.agreementAcceptedTx(tx, taskID, bid.StudentID, agreement.RoleSitter)
+	if err != nil {
+		return domain.TaskView{}, err
+	}
+	if !ownerAccepted || !sitterAccepted {
+		return domain.TaskView{}, conflict("双方尚未确认当前版本的服务协议，不能成交")
+	}
 	payDeadline := now.Add(paymentTimeout)
 	result, err := tx.Exec(`
 		UPDATE tasks SET status = 'PENDING_PAYMENT', price_fen = ?, winner_bid_id = ?, pay_deadline_at = ?,
@@ -377,6 +429,12 @@ func (s *Store) AwardTask(taskID string, req domain.AwardRequest, now time.Time)
 	if _, err := tx.Exec(`UPDATE tasks SET order_id = ? WHERE id = ?`, orderID, taskID); err != nil {
 		return domain.TaskView{}, err
 	}
+	if err := s.linkAgreementAcceptancesToOrderTx(tx, taskID, orderID, task.OwnerID, bid.StudentID); err != nil {
+		return domain.TaskView{}, err
+	}
+	if err := s.createOrderAgreementSnapshotTx(tx, taskID, orderID, task.OwnerID, bid.StudentID, now); err != nil {
+		return domain.TaskView{}, err
+	}
 	if err := reserveStudentSlotsTx(tx, orderID, bid.StudentID, task.StartAt, task.TimeWindow, timestamp(now)); err != nil {
 		return domain.TaskView{}, err
 	}
@@ -396,7 +454,7 @@ func (s *Store) ReopenTask(taskID, ownerID string, now time.Time) (domain.TaskVi
 		return domain.TaskView{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	task, err := scanTask(tx.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, taskID))
+	task, err := s.scanTask(tx.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, taskID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TaskView{}, notFound("任务不存在")
 	}
@@ -455,7 +513,7 @@ func (s *Store) CancelTask(taskID, ownerID string, now time.Time) (domain.TaskVi
 		return domain.TaskView{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	task, err := scanTask(tx.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, taskID))
+	task, err := s.scanTask(tx.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, taskID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TaskView{}, notFound("任务不存在")
 	}

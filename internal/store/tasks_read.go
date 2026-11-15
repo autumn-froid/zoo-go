@@ -24,18 +24,19 @@ type taskScanner interface {
 	Scan(...any) error
 }
 
-func scanTask(scanner taskScanner) (domain.Task, error) {
+func (s *Store) scanTask(scanner taskScanner) (domain.Task, error) {
 	var task domain.Task
 	var petJSON, servicesJSON, checklistJSON, photosJSON string
+	var locationName, addressDetail string
 	var payDeadline sql.NullString
 	var startAt, bidDeadline, createdAt string
 	var rated int
 	err := scanner.Scan(
 		&task.ID, &task.OwnerID, &task.PetID, &petJSON, &task.Mode, &task.Status,
 		&task.BudgetFen, &task.PriceFen, &task.ServiceDate, &task.ServiceDateText,
-		&task.TimeWindow, &startAt, &servicesJSON, &task.Community, &task.LocationName,
+		&task.TimeWindow, &startAt, &servicesJSON, &task.Community, &locationName,
 		&task.Latitude, &task.Longitude, &task.AddressMasked,
-		&task.AddressDetail, &task.Note, &checklistJSON, &bidDeadline, &payDeadline,
+		&addressDetail, &task.Note, &checklistJSON, &bidDeadline, &payDeadline,
 		&task.WinnerBidID, &task.OrderID, &photosJSON, &rated, &task.Version, &createdAt,
 	)
 	if err != nil {
@@ -52,11 +53,17 @@ func scanTask(scanner taskScanner) (domain.Task, error) {
 	task.CreatedAt = parseTimestamp(createdAt)
 	task.PayDeadlineAt = nullableTimestamp(payDeadline)
 	task.Rated = rated == 1
+	if task.LocationName, err = s.decryptPII(piiScopeTaskLocation, locationName); err != nil {
+		return domain.Task{}, err
+	}
+	if task.AddressDetail, err = s.decryptPII(piiScopeTaskAddress, addressDetail); err != nil {
+		return domain.Task{}, err
+	}
 	return task, nil
 }
 
 func (s *Store) taskByID(taskID string) (domain.Task, error) {
-	task, err := scanTask(s.db.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, taskID))
+	task, err := s.scanTask(s.db.QueryRow(`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, taskID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Task{}, notFound("任务不存在")
 	}
@@ -71,7 +78,7 @@ func (s *Store) queryTasks(query string, args ...any) ([]domain.Task, error) {
 	defer rows.Close()
 	tasks := []domain.Task{}
 	for rows.Next() {
-		task, err := scanTask(rows)
+		task, err := s.scanTask(rows)
 		if err != nil {
 			return nil, err
 		}

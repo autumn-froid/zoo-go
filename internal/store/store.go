@@ -19,6 +19,7 @@ import (
 	"zoo-go/internal/domain"
 	"zoo-go/internal/geo"
 	"zoo-go/internal/moderation"
+	"zoo-go/internal/security"
 )
 
 const (
@@ -39,6 +40,11 @@ type Store struct {
 	db         *sql.DB
 	path       string
 	moderation moderation.Policy
+	pii        *security.Cipher
+}
+
+type Options struct {
+	PII *security.Cipher
 }
 
 type dbUser struct {
@@ -61,6 +67,10 @@ type dbUser struct {
 }
 
 func New(path string) (*Store, error) {
+	return NewWithOptions(path, Options{})
+}
+
+func NewWithOptions(path string, options Options) (*Store, error) {
 	dsn := path
 	if path != "" {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -93,7 +103,7 @@ func New(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
-	store := &Store{db: db, path: path, moderation: moderation.DefaultPolicy()}
+	store := &Store{db: db, path: path, moderation: moderation.DefaultPolicy(), pii: options.PII}
 	if err := store.migrateStudentVerificationSchema(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate student verification: %w", err)
@@ -109,6 +119,14 @@ func New(path string) (*Store, error) {
 	if err := store.migrateLocationSchema(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate location schema: %w", err)
+	}
+	if err := store.migratePIIData(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate PII data: %w", err)
+	}
+	if err := store.seedAgreementVersions(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("seed agreement versions: %w", err)
 	}
 	if err := store.migrateOrdersTaskUniqueness(); err != nil {
 		db.Close()
@@ -264,9 +282,19 @@ func (s *Store) profileFromUser(user dbUser) (domain.Profile, error) {
 	`, user.ID).Scan(&completed); err != nil {
 		return domain.Profile{}, err
 	}
+	identityStatus := domain.IdentityUnverified
+	identityMasked := ""
+	err := s.db.QueryRow(`
+		SELECT status, id_number_mask FROM identity_verifications
+		WHERE user_id = ? ORDER BY submitted_at DESC, id DESC LIMIT 1
+	`, user.ID).Scan(&identityStatus, &identityMasked)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return domain.Profile{}, err
+	}
 	return domain.Profile{
 		ID: user.ID, Name: user.Name, Avatar: user.Avatar, PhoneMask: user.PhoneMask,
-		Verified: user.OwnerVerified, CompletedOrders: completed,
+		Verified: user.OwnerVerified, IdentityStatus: identityStatus, IdentityMasked: identityMasked,
+		CompletedOrders: completed,
 		StudentVerified: user.StudentVerified, StudentStatus: user.StudentStatus,
 		School: user.School, Rating: user.Rating, DoneCount: user.DoneCount,
 		ServiceRadiusKM: user.ServiceRadiusKM,
@@ -620,6 +648,12 @@ func (s *Store) defaultAddress(ownerID string) (*domain.OwnerAddress, error) {
 		return nil, nil
 	}
 	if err != nil {
+		return nil, err
+	}
+	if address.Detail, err = s.decryptPII(piiScopeAddressDetail, address.Detail); err != nil {
+		return nil, err
+	}
+	if address.LocationName, err = s.decryptPII(piiScopeAddressName, address.LocationName); err != nil {
 		return nil, err
 	}
 	return &address, nil

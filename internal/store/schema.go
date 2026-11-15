@@ -262,6 +262,78 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_student_verifications_pending
 CREATE UNIQUE INDEX IF NOT EXISTS ux_student_verifications_chsi_active
     ON student_verifications(chsi_code_hash) WHERE status IN ('PENDING', 'VERIFIED');
 
+CREATE TABLE IF NOT EXISTS identity_verifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    real_name_enc TEXT NOT NULL,
+    id_number_enc TEXT NOT NULL,
+    id_number_hash TEXT NOT NULL,
+    id_number_mask TEXT NOT NULL,
+    consent_version TEXT NOT NULL,
+    consent_hash TEXT NOT NULL,
+    status TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'MANUAL_REVIEW',
+    review_note TEXT NOT NULL DEFAULT '',
+    reviewed_by TEXT NOT NULL DEFAULT '',
+    client_ip TEXT NOT NULL DEFAULT '',
+    user_agent TEXT NOT NULL DEFAULT '',
+    submitted_at TEXT NOT NULL,
+    reviewed_at TEXT NOT NULL DEFAULT '',
+    verified_at TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_identity_verifications_user
+    ON identity_verifications(user_id, submitted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_identity_verifications_status
+    ON identity_verifications(status, submitted_at ASC);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_identity_verifications_pending
+    ON identity_verifications(user_id) WHERE status = 'PENDING';
+CREATE UNIQUE INDEX IF NOT EXISTS ux_identity_verifications_active_number
+    ON identity_verifications(id_number_hash) WHERE status IN ('PENDING', 'VERIFIED');
+
+CREATE TABLE IF NOT EXISTS agreement_versions (
+    version TEXT NOT NULL,
+    role TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    required_items_json TEXT NOT NULL,
+    published_at TEXT NOT NULL,
+    PRIMARY KEY(version, role)
+);
+
+CREATE TABLE IF NOT EXISTS agreement_acceptances (
+    id TEXT PRIMARY KEY,
+    agreement_version TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    bid_id TEXT NOT NULL DEFAULT '',
+    order_id TEXT NOT NULL DEFAULT '',
+    required_items_json TEXT NOT NULL,
+    client_ip TEXT NOT NULL DEFAULT '',
+    user_agent TEXT NOT NULL DEFAULT '',
+    accepted_at TEXT NOT NULL,
+    FOREIGN KEY(agreement_version, role) REFERENCES agreement_versions(version, role)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_agreement_acceptances_task_user
+    ON agreement_acceptances(task_id, role, user_id);
+CREATE INDEX IF NOT EXISTS idx_agreement_acceptances_order
+    ON agreement_acceptances(order_id, accepted_at);
+
+CREATE TABLE IF NOT EXISTS order_agreement_snapshots (
+    order_id TEXT PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
+    agreement_version TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    owner_json TEXT NOT NULL,
+    sitter_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS admin_audit_logs (
     id TEXT PRIMARY KEY,
     actor TEXT NOT NULL,

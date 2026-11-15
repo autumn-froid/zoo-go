@@ -4,6 +4,7 @@ const VIEW_META = {
     overview: {eyebrow: '运营工作台', title: '运营概览', subtitle: '查看平台实时状态与待处理事项。'},
     dispatch: {eyebrow: '智能调度', title: '5km 派单对比', subtitle: '用真实待派任务对比贪心与 KM（匈牙利算法）的批量匹配结果。'},
     verifications: {eyebrow: '准入管理', title: '学籍审核', subtitle: '核验学生身份与在校状态，控制平台报价准入。'},
+    identities: {eyebrow: '准入管理', title: '实名认证审核', subtitle: '人工或第三方核验姓名与身份证件号码，决定双方交易准入。'},
     refunds: {eyebrow: '资金处置', title: '退款审核', subtitle: '处理主人退款申请，并跟进微信原路退款结果。'},
     users: {eyebrow: '人员管理', title: '用户管理', subtitle: '查看主人和学生账号，处理停用与恢复。'},
     orders: {eyebrow: '履约管理', title: '订单管理', subtitle: '追踪订单状态、双方人员、服务时间与金额。'},
@@ -16,6 +17,7 @@ const state = {
     view: 'overview',
     filters: {
         verifications: 'PENDING',
+        identities: 'PENDING',
         refunds: 'REQUESTED',
         users: {status: 'ALL', query: ''},
         orders: 'ALL',
@@ -223,6 +225,11 @@ const renderOverview = (overview) => {
                     <div><h2 class="panel-title">待办队列</h2><p class="panel-subtitle">优先处理影响交易与准入的事项</p></div>
                 </div>
                 <div class="queue-list">
+                    <button class="queue-item" type="button" data-goto="identities">
+                        <span class="queue-icon">◉</span>
+                        <span><strong>实名资料审核</strong><small>核验姓名与身份证件号码后开放交易</small></span>
+                        <span class="queue-meta">${overview.pendingIdentities} 项待办</span>
+                    </button>
                     <button class="queue-item" type="button" data-goto="verifications">
                         <span class="queue-icon">✓</span>
                         <span><strong>学籍资料审核</strong><small>核对学信网报告与申请资料</small></span>
@@ -296,6 +303,40 @@ const renderVerifications = (items) => {
                     <td>${item.status === 'PENDING' ? `<div class="row-actions">
                         <button class="button button-soft" data-action="verification-approve" data-id="${escapeHTML(item.id)}">通过</button>
                         <button class="button button-danger" data-action="verification-reject" data-id="${escapeHTML(item.id)}">驳回</button>
+                    </div>` : '<span class="muted-cell">已处理</span>'}</td>
+                </tr>
+            `).join('')}</tbody>
+        </table></div>
+    `
+}
+
+const renderIdentityVerifications = (items) => {
+    const toolbar = `
+        <div class="toolbar">
+            ${filterButtons('identities', state.filters.identities, [
+                ['PENDING', '待审核'], ['VERIFIED', '已通过'], ['REJECTED', '已驳回'], ['ALL', '全部'],
+            ])}
+            <div class="toolbar-spacer"></div>
+            <span class="muted-cell">共 ${items.length} 条 · 身份证件号仅限本次核验使用</span>
+        </div>
+    `
+    if (!items.length) {
+        root.innerHTML = toolbar + emptyState('当前没有待处理实名资料', '用户提交实名资料后会出现在这里。')
+        return
+    }
+    root.innerHTML = toolbar + `
+        <div class="table-wrap"><table>
+            <thead><tr><th>申请人</th><th>真实姓名</th><th>身份证件号码</th><th>提交时间</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>${items.map((item) => `
+                <tr>
+                    <td>${person(item.userName, item.userId, '')}</td>
+                    <td><strong>${escapeHTML(item.realName)}</strong></td>
+                    <td><span class="mono">${escapeHTML(item.idNumber || item.idNumberMasked)}</span></td>
+                    <td class="muted-cell">${formatDate(item.submittedAt)}</td>
+                    <td>${badge(item.status)}${item.reviewNote ? `<div class="muted-cell" style="margin-top:5px;max-width:180px">${escapeHTML(item.reviewNote)}</div>` : ''}</td>
+                    <td>${item.status === 'PENDING' ? `<div class="row-actions">
+                        <button class="button button-soft" data-action="identity-approve" data-id="${escapeHTML(item.id)}">通过</button>
+                        <button class="button button-danger" data-action="identity-reject" data-id="${escapeHTML(item.id)}">驳回</button>
                     </div>` : '<span class="muted-cell">已处理</span>'}</td>
                 </tr>
             `).join('')}</tbody>
@@ -580,6 +621,10 @@ const loadView = async () => {
             const status = state.filters.verifications
             state.data.verifications = await api(`/v1/admin/student-verifications?status=${encodeURIComponent(status)}`)
             renderVerifications(state.data.verifications)
+        } else if (state.view === 'identities') {
+            const status = state.filters.identities
+            state.data.identities = await api(`/v1/admin/identity-verifications?status=${encodeURIComponent(status)}`)
+            renderIdentityVerifications(state.data.identities)
         } else if (state.view === 'refunds') {
             const status = state.filters.refunds
             state.data.refunds = await api(`/v1/admin/refunds?status=${encodeURIComponent(status)}`)
@@ -699,6 +744,31 @@ const handleAction = async (button) => {
         })
         if (value === null) return
         await request(`/v1/admin/student-verifications/${encodeURIComponent(id)}/reject`, {
+            method: 'POST', body: JSON.stringify({reason: value}),
+        })
+    }
+    if (action === 'identity-approve') {
+        const value = await openModal({
+            title: '通过实名认证',
+            description: '请确认已通过微信实名、持牌核验服务或人工方式核对姓名与身份证件号码一致。',
+            confirmText: '确认通过',
+            tone: 'primary',
+        })
+        if (value === null) return
+        await request(`/v1/admin/identity-verifications/${encodeURIComponent(id)}/approve`, {method: 'POST'})
+    }
+    if (action === 'identity-reject') {
+        const value = await openModal({
+            title: '驳回实名认证',
+            description: '用户可修正资料后重新提交；驳回原因会写入审计日志。',
+            fieldLabel: '驳回原因',
+            fieldType: 'textarea',
+            placeholder: '例如：姓名与身份证件号码不一致',
+            confirmText: '确认驳回',
+            tone: 'danger',
+        })
+        if (value === null) return
+        await request(`/v1/admin/identity-verifications/${encodeURIComponent(id)}/reject`, {
             method: 'POST', body: JSON.stringify({reason: value}),
         })
     }
