@@ -153,6 +153,13 @@ func (s *Store) migrateCommunitySchema() error {
 		CREATE INDEX IF NOT EXISTS idx_community_moderation
 		ON community_posts(moderation_status, created_at DESC, id DESC)
 	`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_community_author_created
+		ON community_posts(author_id, created_at)
+	`)
 	return err
 }
 

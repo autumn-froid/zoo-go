@@ -218,10 +218,19 @@ func signReflectValue(value reflect.Value, signer mediaSigner, now time.Time, tt
 			item := iter.Value()
 			if key.Kind() == reflect.String && mediaMapFields[strings.ToLower(key.String())] {
 				signed := signMediaField(item, signer, now, ttl)
-				result.SetMapIndex(key, signed)
+				if signed.IsValid() && signed.Type().AssignableTo(item.Type()) {
+					result.SetMapIndex(key, signed)
+				} else {
+					result.SetMapIndex(key, item)
+				}
 				continue
 			}
-			result.SetMapIndex(key, signReflectValue(item, signer, now, ttl))
+			signed := signReflectValue(item, signer, now, ttl)
+			if signed.IsValid() && signed.Type().AssignableTo(item.Type()) {
+				result.SetMapIndex(key, signed)
+			} else {
+				result.SetMapIndex(key, item)
+			}
 		}
 		return result
 	default:

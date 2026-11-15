@@ -166,6 +166,27 @@ func createWeChatTestUser(t *testing.T, st *Store, name string) domain.Profile {
 	return session.Profile
 }
 
+func TestLoginAvatarUploadOwnership(t *testing.T) {
+	st := newTestStore(t)
+	now := time.Now()
+	owner, err := st.Login("wx_avatar_owner", "头像所有者", "", "", now)
+	if err != nil {
+		t.Fatalf("owner Login() error = %v", err)
+	}
+	if err := st.RecordUpload(owner.Profile.ID, "owner-avatar.jpg", "avatar.jpg", "image/jpeg", 128, now); err != nil {
+		t.Fatalf("RecordUpload() error = %v", err)
+	}
+	if _, err := st.Login("wx_avatar_owner", "头像所有者", "/uploads/owner-avatar.jpg", "", now); err != nil {
+		t.Fatalf("owner avatar Login() error = %v", err)
+	}
+	if _, err := st.Login("wx_avatar_other", "其他用户", "/uploads/owner-avatar.jpg", "", now); err == nil {
+		t.Fatal("another user's upload was accepted as avatar")
+	}
+	if _, err := st.Login("wx_avatar_new", "新用户", "/uploads/owner-avatar.jpg", "", now); err == nil {
+		t.Fatal("new user upload avatar was accepted")
+	}
+}
+
 func testChsiCode() string {
 	return strings.ToUpper(strings.TrimPrefix(newID(""), "_"))
 }
