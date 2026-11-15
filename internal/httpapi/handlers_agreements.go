@@ -8,7 +8,7 @@ import (
 )
 
 func (s *Server) currentAgreement(w http.ResponseWriter, r *http.Request) {
-	role := agreement.RoleOwner
+	var role string
 	switch strings.ToLower(strings.TrimSpace(query(r, "role", "owner"))) {
 	case "owner":
 		role = agreement.RoleOwner
