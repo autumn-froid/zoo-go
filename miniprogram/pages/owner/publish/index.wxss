@@ -292,6 +292,30 @@
     background: #f97316;
 }
 
+.agreement-link {
+    margin-top: 16rpx;
+    color: #0f766e;
+    font-size: 23rpx;
+    text-align: right;
+}
+
+.identity-warning {
+    display: flex;
+    align-items: center;
+    gap: 16rpx;
+    padding: 24rpx 28rpx;
+    margin-bottom: 20rpx;
+    border: 1rpx solid #fed7aa;
+    background: #fff7ed;
+}
+
+.identity-link {
+    flex-shrink: 0;
+    color: #ea580c;
+    font-size: 24rpx;
+    font-weight: 700;
+}
+
 .publish-footer {
     position: fixed;
     left: 0;

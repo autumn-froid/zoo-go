@@ -80,6 +80,7 @@ func (s *Server) publishTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.OwnerID = currentUser(r).ID
+	req.ClientIP, req.UserAgent = requestMetadata(r)
 	view, err := s.store.PublishTask(req, s.now())
 	if err != nil {
 		writeError(w, err)
@@ -95,6 +96,7 @@ func (s *Server) submitBid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.StudentID = currentUser(r).ID
+	req.ClientIP, req.UserAgent = requestMetadata(r)
 	view, err := s.store.SubmitBid(r.PathValue("id"), req, s.now())
 	if err != nil {
 		writeError(w, err)

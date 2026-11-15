@@ -1,6 +1,7 @@
 const {request, mediaUrl} = require('../../../utils/api')
 
 const MENU = [
+    {icon: '◉', label: '实名认证', desc: '待提交'},
     {icon: '🐾', label: '宠物档案', desc: '管理宠物档案'},
     {icon: '⌖', label: '地址管理', desc: '管理默认服务地址'},
     {icon: '◷', label: '订阅消息授权', desc: '订单节点提醒'},
@@ -38,7 +39,19 @@ Page({
                 profile,
                 profileInitial: (profile.name || '宠').slice(0, 1),
                 petCount: (home.pets || []).length,
-                menu: MENU.map((item) => item.label === '宠物档案' ? {...item, desc: `${(home.pets || []).length} 个宠物`} : item),
+                menu: MENU.map((item) => {
+                    if (item.label === '宠物档案') {
+                        return {...item, desc: `${(home.pets || []).length} 个宠物`}
+                    }
+                    if (item.label === '实名认证') {
+                        const status = profile.identityStatus
+                        const desc = status === 'VERIFIED'
+                            ? `已认证 · ${profile.identityMasked || ''}`
+                            : status === 'PENDING' ? '资料审核中' : status === 'REJECTED' ? '未通过，请重新提交' : '交易前须完成'
+                        return {...item, desc}
+                    }
+                    return item
+                }),
             })
         } catch (error) {
             this.setData({loading: false})
@@ -66,6 +79,10 @@ Page({
                 success: () => wx.showToast({title: '消息模板尚未配置', icon: 'none'}),
                 fail: () => wx.showToast({title: '模板待配置', icon: 'none'}),
             })
+            return
+        }
+        if (label === '实名认证') {
+            wx.navigateTo({url: '/pages/identity/index'})
             return
         }
         wx.showToast({title: '该设置项尚未开放', icon: 'none'})

@@ -2,6 +2,7 @@ const {request, mediaUrl} = require('../../../utils/api')
 const {money} = require('../../../utils/format')
 
 const MENU = [
+    {icon: '◉', label: '实名认证', desc: '交易前须完成'},
     {icon: '⌖', label: '常驻区域与接单半径', desc: '设置接单范围'},
     {icon: '◷', label: '空闲时段设置', desc: '工作日 18:00 后 / 周末'},
     {icon: '✓', label: '服务承诺与履约规范', desc: '签到、清单、凭证'},
@@ -24,6 +25,7 @@ Page({
     data: {
         loading: true,
         student: null,
+        identity: null,
         availableText: '0',
         initial: '学',
         realNameInput: '',
@@ -53,10 +55,12 @@ Page({
 
     async loadProfile() {
         try {
-            const [student, earnings] = await Promise.all([
+            const [student, earnings, identity] = await Promise.all([
                 request('/v1/student/profile'),
                 request('/v1/student/earnings'),
+                request('/v1/identity/verification'),
             ])
+            const verification = identity.verification || {}
             this.setData({
                 loading: false,
                 student: {...student, avatar: mediaUrl(student.avatar)},
@@ -69,9 +73,19 @@ Page({
                 reviewNote: student.verificationNote || '',
                 expiresText: dateText(student.verificationExpiresAt),
                 availableText: money(earnings.availableFen),
-                menu: MENU.map((item) => item.label === '常驻区域与接单半径'
-                    ? {...item, desc: `马连洼街道 · ${student.serviceRadiusKm}km`}
-                    : item),
+                identity: verification,
+                menu: MENU.map((item) => {
+                    if (item.label === '常驻区域与接单半径') {
+                        return {...item, desc: `马连洼街道 · ${student.serviceRadiusKm}km`}
+                    }
+                    if (item.label === '实名认证') {
+                        const desc = verification.status === 'VERIFIED'
+                            ? `已认证 · ${verification.idNumberMasked || ''}`
+                            : verification.status === 'PENDING' ? '资料审核中' : verification.status === 'REJECTED' ? '未通过，请重新提交' : '交易前须完成'
+                        return {...item, desc}
+                    }
+                    return item
+                }),
             })
         } catch (error) {
             this.setData({loading: false})
@@ -161,6 +175,10 @@ Page({
     },
 
     onMenu(event) {
+        if (event.currentTarget.dataset.label === '实名认证') {
+            wx.navigateTo({url: '/pages/identity/index'})
+            return
+        }
         wx.showToast({title: '该设置项尚未开放', icon: 'none'})
     },
 })

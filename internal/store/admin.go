@@ -18,6 +18,7 @@ func (s *Store) AdminOverview(now time.Time) (domain.AdminOverview, error) {
 			(SELECT COUNT(*) FROM users),
 			(SELECT COUNT(*) FROM users WHERE account_status = 'DISABLED'),
 			(SELECT COUNT(*) FROM users WHERE student_verified = 1 AND student_status = 'VERIFIED'),
+			(SELECT COUNT(*) FROM identity_verifications WHERE status = 'PENDING'),
 			(SELECT COUNT(*) FROM student_verifications WHERE status = 'PENDING'),
 			(SELECT COUNT(*) FROM refunds WHERE status = 'REQUESTED'),
 			(SELECT COUNT(*) FROM community_posts WHERE moderation_status = 'PENDING'),
@@ -27,7 +28,7 @@ func (s *Store) AdminOverview(now time.Time) (domain.AdminOverview, error) {
 			(SELECT COALESCE(SUM(amount_fen), 0) FROM orders WHERE status IN ('PAID', 'IN_SERVICE', 'PENDING_CONFIRM', 'COMPLETED'))
 	`, timestamp(dayStart)).Scan(
 		&overview.Users, &overview.DisabledUsers, &overview.VerifiedStudents,
-		&overview.PendingVerifications, &overview.PendingRefunds, &overview.PendingCommunity,
+		&overview.PendingIdentities, &overview.PendingVerifications, &overview.PendingRefunds, &overview.PendingCommunity,
 		&overview.ActiveOrders, &overview.CompletedOrders, &overview.TodayOrders,
 		&overview.GrossPaidFen,
 	)

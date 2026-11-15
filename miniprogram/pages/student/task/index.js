@@ -12,6 +12,12 @@ Page({
         feeText: '0',
         receiveText: '0',
         canQuote: false,
+        identityVerified: false,
+        agreement: null,
+        agreementVersion: '',
+        identityConfirmed: false,
+        visitRecordConfirmed: false,
+        agreementAccepted: false,
         quoteTitle: '提交保密报价',
         navTitle: '任务详情',
     },
@@ -41,8 +47,13 @@ Page({
 
     async loadTask() {
         try {
-            const task = await request(`/v1/tasks/${this.data.id}?${q({role: 'student'})}`)
+            const [task, agreement, identity] = await Promise.all([
+                request(`/v1/tasks/${this.data.id}?${q({role: 'student'})}`),
+                request('/v1/agreements/current?role=sitter'),
+                request('/v1/identity/verification'),
+            ])
             const decorated = decorateTask(task)
+            const verification = identity.verification || {}
             const defaultPrice = task.myBid
                 ? task.myBid.priceFen / 100
                 : task.mode === 'fixed'
@@ -56,6 +67,9 @@ Page({
                 quoteTitle: task.myBid ? '更新报价' : task.mode === 'fixed' ? '接受一口价' : '提交保密报价',
                 canQuote: task.status === 'BIDDING' && task.remainingSec > 0,
                 navTitle: task.status === 'BIDDING' ? '任务详情' : '任务已成交',
+                identityVerified: verification.status === 'VERIFIED',
+                agreement,
+                agreementVersion: agreement.version,
             })
             this.updateEstimate(defaultPrice)
         } catch (error) {
@@ -110,8 +124,44 @@ Page({
         this.setData({message: event.detail.value})
     },
 
+    toggleConsent(event) {
+        const field = event.currentTarget.dataset.field
+        if (field) {
+            this.setData({[field]: !this.data[field]})
+        }
+    },
+
+    goIdentity() {
+        wx.navigateTo({url: '/pages/identity/index'})
+    },
+
+    showAgreement() {
+        wx.navigateTo({url: '/pages/agreement/index?role=sitter'})
+    },
+
     async submitBid() {
         if (!this.data.task || !this.data.canQuote || this.data.submitting) {
+            return
+        }
+        if (!this.data.identityVerified) {
+            wx.showModal({
+                title: '请先完成实名认证',
+                content: '报价前需要核验真实身份。实名资料审核通过后即可报价。',
+                confirmText: '去认证',
+                success: (result) => {
+                    if (result.confirm) {
+                        this.goIdentity()
+                    }
+                },
+            })
+            return
+        }
+        if (!this.data.identityConfirmed || !this.data.visitRecordConfirmed || !this.data.agreementAccepted) {
+            wx.showToast({title: '请逐项确认实名、上门记录和服务协议', icon: 'none'})
+            return
+        }
+        if (!this.data.agreementVersion) {
+            wx.showToast({title: '协议版本加载失败，请刷新后重试', icon: 'none'})
             return
         }
         const price = Number(this.data.price)
@@ -128,6 +178,9 @@ Page({
                 data: {
                     priceFen: Math.round(price * 100),
                     message: this.data.message,
+                    agreementVersion: this.data.agreementVersion,
+                    agreementItems: ['sitter_identity_truth', 'sitter_visit_record', 'service_agreement'],
+                    agreementAccepted: true,
                 },
             })
             wx.showToast({title: this.data.task.myBid ? '报价已更新' : '报价已提交', icon: 'success'})

@@ -7,11 +7,15 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"zoo-go/internal/agreement"
 	"zoo-go/internal/domain"
 )
+
+var testIdentitySequence atomic.Int64
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
@@ -154,7 +158,12 @@ func createTestUser(t *testing.T, st *Store, name string) domain.Profile {
 	if err != nil {
 		t.Fatalf("Login() error = %v", err)
 	}
-	return session.Profile
+	verifyTestIdentity(t, st, session.Profile.ID, name)
+	profile, err := st.Profile(session.Profile.ID)
+	if err != nil {
+		t.Fatalf("Profile() after identity verification error = %v", err)
+	}
+	return profile
 }
 
 func createWeChatTestUser(t *testing.T, st *Store, name string) domain.Profile {
@@ -163,7 +172,67 @@ func createWeChatTestUser(t *testing.T, st *Store, name string) domain.Profile {
 	if err != nil {
 		t.Fatalf("Login() error = %v", err)
 	}
-	return session.Profile
+	verifyTestIdentity(t, st, session.Profile.ID, name)
+	profile, err := st.Profile(session.Profile.ID)
+	if err != nil {
+		t.Fatalf("Profile() after identity verification error = %v", err)
+	}
+	return profile
+}
+
+func verifyTestIdentity(t *testing.T, st *Store, userID, name string) {
+	t.Helper()
+	if _, err := st.SubmitIdentityVerification(userID, domain.SubmitIdentityVerificationRequest{
+		RealName: name, IDNumber: testIdentityNumber(), Consent: true,
+		ConsentVersion: agreement.IdentityConsentVersion,
+	}, time.Now()); err != nil {
+		t.Fatalf("SubmitIdentityVerification() error = %v", err)
+	}
+	applications, err := st.IdentityVerificationApplications(domain.IdentityPending)
+	if err != nil {
+		t.Fatalf("IdentityVerificationApplications() error = %v", err)
+	}
+	for _, application := range applications {
+		if application.UserID == userID {
+			if err := st.ApproveIdentityVerification(application.ID, "reviewer", time.Now()); err != nil {
+				t.Fatalf("ApproveIdentityVerification() error = %v", err)
+			}
+			return
+		}
+	}
+	t.Fatalf("identity application for %s not found", userID)
+}
+
+func testIdentityNumber() string {
+	base := fmt.Sprintf("11010519900101%03d", testIdentitySequence.Add(1)%1000)
+	weights := [...]int{7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2}
+	checks := "10X98765432"
+	sum := 0
+	for index, char := range base {
+		sum += int(char-'0') * weights[index]
+	}
+	return base + string(checks[sum%11])
+}
+
+func testBidRequest(studentID string, priceFen int64) domain.SubmitBidRequest {
+	definition, _ := agreement.Current(agreement.RoleSitter)
+	items := make([]string, 0, len(definition.RequiredItems))
+	for _, item := range definition.RequiredItems {
+		items = append(items, item.Code)
+	}
+	return domain.SubmitBidRequest{
+		StudentID: studentID, PriceFen: priceFen, AgreementAccepted: true,
+		AgreementVersion: definition.Version, AgreementItems: items,
+	}
+}
+
+func testOwnerAgreement() (string, []string) {
+	definition, _ := agreement.Current(agreement.RoleOwner)
+	items := make([]string, 0, len(definition.RequiredItems))
+	for _, item := range definition.RequiredItems {
+		items = append(items, item.Code)
+	}
+	return definition.Version, items
 }
 
 func TestLoginAvatarUploadOwnership(t *testing.T) {
@@ -310,9 +379,9 @@ func TestExpiredStudentVerificationCannotBid(t *testing.T) {
 	}
 	pet := createTestPet(t, st, owner.ID)
 	task := publishTestTask(t, st, owner.ID, pet.ID)
-	_, err = st.SubmitBid(task.ID, domain.SubmitBidRequest{
-		StudentID: student.ID, PriceFen: 5000, Message: "可以按时上门",
-	}, now.Add(2*time.Hour))
+	bidRequest := testBidRequest(student.ID, 5000)
+	bidRequest.Message = "可以按时上门"
+	_, err = st.SubmitBid(task.ID, bidRequest, now.Add(2*time.Hour))
 	var appErr *AppError
 	if !errors.As(err, &appErr) || appErr.Code != "FORBIDDEN" {
 		t.Fatalf("expired bid error = %v", err)
@@ -334,6 +403,7 @@ func createTestPet(t *testing.T, st *Store, ownerID string) domain.Pet {
 func publishTestTask(t *testing.T, st *Store, ownerID, petID string) domain.TaskView {
 	t.Helper()
 	now := time.Now()
+	agreementVersion, agreementItems := testOwnerAgreement()
 	view, err := st.PublishTask(domain.PublishTaskRequest{
 		OwnerID: ownerID, PetID: petID, Services: []string{"喂食", "换水", "拍照反馈"},
 		ServiceDate: now.AddDate(0, 0, 2).Format("2006-01-02"), TimeWindow: "09:00-10:00",
@@ -341,6 +411,7 @@ func publishTestTask(t *testing.T, st *Store, ownerID, petID string) domain.Task
 		Community: "马连洼·朗润园附近", LocationName: "朗润园东门",
 		Latitude: 39.9998, Longitude: 116.3269, AddressDetail: "3号楼2单元401",
 		Note: "请按清单完成", SafetyConfirmed: true, AgreementAccepted: true,
+		AgreementVersion: agreementVersion, AgreementItems: agreementItems,
 	}, now)
 	if err != nil {
 		t.Fatalf("PublishTask() error = %v", err)
@@ -371,10 +442,14 @@ func TestStudentCannotSeeOtherBidsOrAddress(t *testing.T) {
 	pet := createTestPet(t, st, owner.ID)
 	task := publishTestTask(t, st, owner.ID, pet.ID)
 
-	if _, err := st.SubmitBid(task.ID, domain.SubmitBidRequest{StudentID: studentA.ID, PriceFen: 4500, Message: "可以准时到"}, time.Now()); err != nil {
+	bidA := testBidRequest(studentA.ID, 4500)
+	bidA.Message = "可以准时到"
+	if _, err := st.SubmitBid(task.ID, bidA, time.Now()); err != nil {
 		t.Fatalf("SubmitBid(A) error = %v", err)
 	}
-	if _, err := st.SubmitBid(task.ID, domain.SubmitBidRequest{StudentID: studentB.ID, PriceFen: 4200, Message: "本小区"}, time.Now()); err != nil {
+	bidB := testBidRequest(studentB.ID, 4200)
+	bidB.Message = "本小区"
+	if _, err := st.SubmitBid(task.ID, bidB, time.Now()); err != nil {
 		t.Fatalf("SubmitBid(B) error = %v", err)
 	}
 	view, err := st.Task(task.ID, studentA.ID, "student")
@@ -445,7 +520,7 @@ func TestNearbyTasksAndBidRadiusEnforcement(t *testing.T) {
 	if !errors.As(err, &appErr) || appErr.Code != "FORBIDDEN" {
 		t.Fatalf("far task detail error = %v", err)
 	}
-	_, err = st.SubmitBid(task.ID, domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 4500}, time.Now())
+	_, err = st.SubmitBid(task.ID, testBidRequest(student.ID, 4500), time.Now())
 	if !errors.As(err, &appErr) || appErr.Code != "FORBIDDEN" {
 		t.Fatalf("far bid error = %v", err)
 	}
@@ -473,7 +548,7 @@ func TestConcurrentAwardOnlyOneWinner(t *testing.T) {
 	student := createVerifiedStudent(t, st, "学生A")
 	pet := createTestPet(t, st, owner.ID)
 	task := publishTestTask(t, st, owner.ID, pet.ID)
-	bidView, err := st.SubmitBid(task.ID, domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 4500}, time.Now())
+	bidView, err := st.SubmitBid(task.ID, testBidRequest(student.ID, 4500), time.Now())
 	if err != nil {
 		t.Fatalf("SubmitBid() error = %v", err)
 	}
@@ -515,7 +590,7 @@ func TestPaymentAndFulfillmentLifecycle(t *testing.T) {
 	student := createVerifiedStudent(t, st, "学生A")
 	pet := createTestPet(t, st, owner.ID)
 	task := publishTestTask(t, st, owner.ID, pet.ID)
-	bidView, err := st.SubmitBid(task.ID, domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 4500}, time.Now())
+	bidView, err := st.SubmitBid(task.ID, testBidRequest(student.ID, 4500), time.Now())
 	if err != nil {
 		t.Fatalf("SubmitBid() error = %v", err)
 	}
@@ -603,11 +678,11 @@ func TestConcurrentAwardsForSameStudentSlotHaveSingleWinner(t *testing.T) {
 	petB := createTestPet(t, st, ownerB.ID)
 	taskA := publishTestTask(t, st, ownerA.ID, petA.ID)
 	taskB := publishTestTask(t, st, ownerB.ID, petB.ID)
-	bidA, err := st.SubmitBid(taskA.ID, domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 4500}, time.Now())
+	bidA, err := st.SubmitBid(taskA.ID, testBidRequest(student.ID, 4500), time.Now())
 	if err != nil {
 		t.Fatalf("SubmitBid(A) error = %v", err)
 	}
-	bidB, err := st.SubmitBid(taskB.ID, domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 4600}, time.Now())
+	bidB, err := st.SubmitBid(taskB.ID, testBidRequest(student.ID, 4600), time.Now())
 	if err != nil {
 		t.Fatalf("SubmitBid(B) error = %v", err)
 	}
@@ -653,11 +728,11 @@ func TestPendingPaymentBlocksSlotUntilExpiry(t *testing.T) {
 	petB := createTestPet(t, st, ownerB.ID)
 	taskA := publishTestTask(t, st, ownerA.ID, petA.ID)
 	taskB := publishTestTask(t, st, ownerB.ID, petB.ID)
-	bidA, err := st.SubmitBid(taskA.ID, domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 4500}, time.Now())
+	bidA, err := st.SubmitBid(taskA.ID, testBidRequest(student.ID, 4500), time.Now())
 	if err != nil {
 		t.Fatalf("SubmitBid(A) error = %v", err)
 	}
-	bidB, err := st.SubmitBid(taskB.ID, domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 4600}, time.Now())
+	bidB, err := st.SubmitBid(taskB.ID, testBidRequest(student.ID, 4600), time.Now())
 	if err != nil {
 		t.Fatalf("SubmitBid(B) error = %v", err)
 	}
@@ -690,7 +765,7 @@ func TestLatePaymentBecomesRefundInsteadOfBooking(t *testing.T) {
 	student := createVerifiedStudent(t, st, "学生A")
 	pet := createTestPet(t, st, owner.ID)
 	task := publishTestTask(t, st, owner.ID, pet.ID)
-	bid, err := st.SubmitBid(task.ID, domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 4500}, time.Now())
+	bid, err := st.SubmitBid(task.ID, testBidRequest(student.ID, 4500), time.Now())
 	if err != nil {
 		t.Fatalf("SubmitBid() error = %v", err)
 	}
@@ -749,7 +824,7 @@ func TestLatePaymentForOldOrderDoesNotConflictWithNewAward(t *testing.T) {
 	student := createVerifiedStudent(t, st, "学生A")
 	pet := createTestPet(t, st, owner.ID)
 	task := publishTestTask(t, st, owner.ID, pet.ID)
-	bid, err := st.SubmitBid(task.ID, domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 4500}, time.Now())
+	bid, err := st.SubmitBid(task.ID, testBidRequest(student.ID, 4500), time.Now())
 	if err != nil {
 		t.Fatalf("SubmitBid() error = %v", err)
 	}
@@ -802,7 +877,7 @@ func TestPaymentRejectsWrongAmountAndDuplicateTransaction(t *testing.T) {
 	student := createVerifiedStudent(t, st, "学生A")
 	pet := createTestPet(t, st, owner.ID)
 	task := publishTestTask(t, st, owner.ID, pet.ID)
-	bid, err := st.SubmitBid(task.ID, domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 4500}, time.Now())
+	bid, err := st.SubmitBid(task.ID, testBidRequest(student.ID, 4500), time.Now())
 	if err != nil {
 		t.Fatalf("SubmitBid() error = %v", err)
 	}
@@ -839,7 +914,7 @@ func TestOwnerRefundRequestAndFailureRestoresBooking(t *testing.T) {
 	student := createVerifiedStudent(t, st, "学生A")
 	pet := createTestPet(t, st, owner.ID)
 	task := publishTestTask(t, st, owner.ID, pet.ID)
-	bid, err := st.SubmitBid(task.ID, domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 4500}, time.Now())
+	bid, err := st.SubmitBid(task.ID, testBidRequest(student.ID, 4500), time.Now())
 	if err != nil {
 		t.Fatalf("SubmitBid() error = %v", err)
 	}
@@ -893,9 +968,9 @@ func TestBidValidation(t *testing.T) {
 		name string
 		req  domain.SubmitBidRequest
 	}{
-		{name: "over budget", req: domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 6001}},
-		{name: "below floor", req: domain.SubmitBidRequest{StudentID: student.ID, PriceFen: 1999}},
-		{name: "unverified", req: domain.SubmitBidRequest{StudentID: createTestUser(t, st, "未认证学生").ID, PriceFen: 4000}},
+		{name: "over budget", req: testBidRequest(student.ID, 6001)},
+		{name: "below floor", req: testBidRequest(student.ID, 1999)},
+		{name: "unverified", req: testBidRequest(createTestUser(t, st, "未认证学生").ID, 4000)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

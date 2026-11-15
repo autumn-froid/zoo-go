@@ -48,6 +48,11 @@ const (
 	StudentRejected   = "REJECTED"
 	StudentExpired    = "EXPIRED"
 
+	IdentityUnverified = "UNVERIFIED"
+	IdentityPending    = "PENDING"
+	IdentityVerified   = "VERIFIED"
+	IdentityRejected   = "REJECTED"
+
 	PostPending          = "PENDING"
 	PostApproved         = "APPROVED"
 	PostRejected         = "REJECTED"
@@ -66,6 +71,8 @@ type Profile struct {
 	Avatar          string  `json:"avatar"`
 	PhoneMask       string  `json:"phoneMask"`
 	Verified        bool    `json:"verified"`
+	IdentityStatus  string  `json:"identityStatus"`
+	IdentityMasked  string  `json:"identityMasked,omitempty"`
 	CompletedOrders int     `json:"completedOrders"`
 	StudentVerified bool    `json:"studentVerified"`
 	StudentStatus   string  `json:"studentStatus"`
@@ -73,6 +80,41 @@ type Profile struct {
 	Rating          float64 `json:"rating"`
 	DoneCount       int     `json:"doneCount"`
 	ServiceRadiusKM float64 `json:"serviceRadiusKm"`
+}
+
+type IdentityVerification struct {
+	ID             string     `json:"id"`
+	UserID         string     `json:"userId"`
+	UserName       string     `json:"userName"`
+	RealName       string     `json:"realName"`
+	IDNumber       string     `json:"idNumber,omitempty"`
+	IDNumberMasked string     `json:"idNumberMasked"`
+	Provider       string     `json:"provider"`
+	Status         string     `json:"status"`
+	ReviewNote     string     `json:"reviewNote,omitempty"`
+	SubmittedAt    time.Time  `json:"submittedAt"`
+	ReviewedAt     *time.Time `json:"reviewedAt,omitempty"`
+	VerifiedAt     *time.Time `json:"verifiedAt,omitempty"`
+}
+
+type AgreementAcceptance struct {
+	ID            string    `json:"id"`
+	UserID        string    `json:"userId"`
+	Role          string    `json:"role"`
+	ContentHash   string    `json:"contentHash"`
+	RequiredItems []string  `json:"requiredItems"`
+	AcceptedAt    time.Time `json:"acceptedAt"`
+	ClientIP      string    `json:"clientIp,omitempty"`
+	UserAgent     string    `json:"userAgent,omitempty"`
+}
+
+type OrderAgreementSnapshot struct {
+	Version     string               `json:"version"`
+	Title       string               `json:"title"`
+	Content     string               `json:"content"`
+	ContentHash string               `json:"contentHash"`
+	Owner       *AgreementAcceptance `json:"owner,omitempty"`
+	Sitter      *AgreementAcceptance `json:"sitter,omitempty"`
 }
 
 type Pet struct {
@@ -126,6 +168,7 @@ type AdminOverview struct {
 	Users                int   `json:"users"`
 	DisabledUsers        int   `json:"disabledUsers"`
 	VerifiedStudents     int   `json:"verifiedStudents"`
+	PendingIdentities    int   `json:"pendingIdentities"`
 	PendingVerifications int   `json:"pendingVerifications"`
 	PendingRefunds       int   `json:"pendingRefunds"`
 	PendingCommunity     int   `json:"pendingCommunity"`
@@ -518,6 +561,10 @@ type PublishTaskRequest struct {
 	Note              string   `json:"note"`
 	SafetyConfirmed   bool     `json:"safetyConfirmed"`
 	AgreementAccepted bool     `json:"agreementAccepted"`
+	AgreementVersion  string   `json:"agreementVersion"`
+	AgreementItems    []string `json:"agreementItems"`
+	ClientIP          string   `json:"-"`
+	UserAgent         string   `json:"-"`
 }
 
 type CreatePetRequest struct {
@@ -574,6 +621,19 @@ type SubmitStudentVerificationRequest struct {
 	ChsiCode       string `json:"chsiCode"`
 }
 
+type SubmitIdentityVerificationRequest struct {
+	RealName       string `json:"realName"`
+	IDNumber       string `json:"idNumber"`
+	ConsentVersion string `json:"consentVersion"`
+	Consent        bool   `json:"consent"`
+	ClientIP       string `json:"-"`
+	UserAgent      string `json:"-"`
+}
+
+type RejectIdentityVerificationRequest struct {
+	Reason string `json:"reason"`
+}
+
 type ApproveStudentVerificationRequest struct {
 	ValidUntil string `json:"validUntil"`
 }
@@ -599,9 +659,14 @@ type Session struct {
 }
 
 type SubmitBidRequest struct {
-	StudentID string `json:"studentId"`
-	PriceFen  int64  `json:"priceFen"`
-	Message   string `json:"message"`
+	StudentID         string   `json:"studentId"`
+	PriceFen          int64    `json:"priceFen"`
+	Message           string   `json:"message"`
+	AgreementAccepted bool     `json:"agreementAccepted"`
+	AgreementVersion  string   `json:"agreementVersion"`
+	AgreementItems    []string `json:"agreementItems"`
+	ClientIP          string   `json:"-"`
+	UserAgent         string   `json:"-"`
 }
 
 type AwardRequest struct {
