@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"io"
@@ -9,9 +10,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"zoo-go/internal/contentsecurity"
 	"zoo-go/internal/domain"
+	"zoo-go/internal/store"
 )
+
+const machineMediaURLTTL = 15 * time.Minute
 
 func (s *Server) communityPosts(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(query(r, "limit", "20"))
@@ -29,12 +35,107 @@ func (s *Server) createCommunityPost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	post, err := s.store.CreateCommunityPost(currentUser(r).ID, req, s.now())
+	user := currentUser(r)
+	var post domain.CommunityPost
+	var err error
+	if s.contentSecurity == nil {
+		post, err = s.store.CreateCommunityPost(user.ID, req, s.now())
+	} else {
+		post, err = s.store.CreateCommunityPostForMachineReview(user.ID, req, s.now())
+	}
 	if err != nil {
 		writeError(w, err)
 		return
 	}
+	if s.contentSecurity != nil {
+		post = s.runMachineReview(r.Context(), user.ID, post)
+	}
 	s.writeDataStatus(w, http.StatusCreated, post)
+}
+
+func (s *Server) runMachineReview(ctx context.Context, userID string, post domain.CommunityPost) domain.CommunityPost {
+	now := s.now()
+	openID, err := s.store.UserOpenID(userID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "load user openid for machine review", "post_id", post.ID, "error", err)
+		return s.fallbackMachineReview(ctx, post, "读取用户标识失败，转人工复核", now)
+	}
+	verdict := store.MachinePass
+	if strings.TrimSpace(post.Content) != "" {
+		text, err := s.contentSecurity.CheckText(ctx, openID, post.Content)
+		if err != nil {
+			s.logger.WarnContext(ctx, "wechat text security check failed", "post_id", post.ID, "error", err)
+			return s.fallbackMachineReview(ctx, post, "文字机器审核服务暂时不可用，转人工复核", now)
+		}
+		verdict = machineVerdict(text.Suggest)
+	}
+	updated, needsImages, err := s.store.ApplyMachineTextReview(post.ID, verdict, nil, now)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "apply machine text review", "post_id", post.ID, "error", err)
+		return post
+	}
+	if !needsImages {
+		return updated
+	}
+	if s.publicBaseURL == "" {
+		return s.fallbackMachineReview(ctx, post, "图片机器审核未配置公网访问地址，转人工复核", now)
+	}
+	if s.callbackVerifier == nil {
+		return s.fallbackMachineReview(ctx, post, "图片机器审核未配置回调验签，转人工复核", now)
+	}
+	urls := make([]string, 0, len(updated.Images))
+	ttl := s.mediaTTL
+	if ttl > machineMediaURLTTL {
+		ttl = machineMediaURLTTL
+	}
+	for _, image := range updated.Images {
+		urls = append(urls, s.publicBaseURL+s.media.signedURL(image, now, ttl))
+	}
+	images, err := s.contentSecurity.SubmitImages(ctx, openID, urls)
+	if err != nil {
+		s.logger.WarnContext(ctx, "wechat image security submission failed", "post_id", post.ID, "error", err)
+		return s.fallbackMachineReview(ctx, post, "图片机器审核提交失败，转人工复核", now)
+	}
+	if len(images) != len(updated.Images) {
+		return s.fallbackMachineReview(ctx, post, "图片机器审核返回结果不完整，转人工复核", now)
+	}
+	submissions := make([]store.MachineImageSubmission, 0, len(images))
+	for index, image := range images {
+		if index >= len(updated.Images) {
+			break
+		}
+		submissions = append(submissions, store.MachineImageSubmission{
+			TraceID: image.TraceID, Path: updated.Images[index],
+		})
+	}
+	updated, err = s.store.MarkMachineReviewing(post.ID, submissions, now, now.Add(s.mediaReviewTTL))
+	if err != nil {
+		s.logger.ErrorContext(ctx, "mark machine media reviewing", "post_id", post.ID, "error", err)
+		return post
+	}
+	return updated
+}
+
+func (s *Server) fallbackMachineReview(ctx context.Context, post domain.CommunityPost, reason string, now time.Time) domain.CommunityPost {
+	updated, _, err := s.store.ApplyMachineTextReview(post.ID, store.MachineUnknown, []string{reason}, now)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "fallback machine review", "post_id", post.ID, "error", err)
+		return post
+	}
+	return updated
+}
+
+func machineVerdict(suggest contentsecurity.Suggest) store.MachineVerdict {
+	switch suggest {
+	case contentsecurity.SuggestPass:
+		return store.MachinePass
+	case contentsecurity.SuggestRisky:
+		return store.MachineRisky
+	case contentsecurity.SuggestReview:
+		return store.MachineReview
+	default:
+		return store.MachineUnknown
+	}
 }
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {

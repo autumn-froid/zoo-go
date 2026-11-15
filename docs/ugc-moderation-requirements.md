@@ -1,6 +1,6 @@
 # 社区 UGC 审核需求与设计
 
-本文是社区动态（发帖、图片、评论等 UGC）的产品与技术要求，当前落地范围为 **P0 安全与风控**。机器审核接入方案放在 P1，举报、申诉和处罚闭环放在 P2。
+本文是社区动态（发帖、图片、评论等 UGC）的产品与技术要求。P0 安全与风控和 P1 微信文字/图片机审已落地，举报、申诉和处罚闭环放在 P2。
 
 ## 1. 背景与目标
 
@@ -13,7 +13,7 @@
 
 非目标：
 
-- P0 不接入第三方机器审核，不自动放行图片。
+- P0 不接入第三方机器审核；P1 已接入微信 `msgSecCheck` 和 `mediaCheckAsync`。
 - P0 不实现完整举报、申诉、禁言和违规计分体系。
 - P0 不建设独立对象存储，先通过签名 URL 收紧本地 `/uploads` 的访问。
 
@@ -42,7 +42,7 @@
 | `LOW` | 干净文字，且图片已通过可信图片审核 | 可自动通过 | 事后抽检 1%–5% |
 | `UNKNOWN` | 机器审核超时、服务降级、结果不确定 | 不得自动通过 | 保持待审，人工兜底 |
 
-P0 当前保持保守策略：本地规则通过后仍默认进入 `PENDING`，只有人工通过才公开。
+P0 未启用机审时保持保守策略：本地规则通过后仍默认进入 `PENDING`。P1 启用机审后，只有文字和全部图片均通过才自动公开。
 
 ### 发布决策矩阵
 
@@ -78,7 +78,7 @@ stateDiagram-v2
     REJECTED --> [*]
 ```
 
-当前代码已实现 `PENDING → APPROVED / REJECTED`；`MACHINE_REVIEWING` 和 `REJECTED_HARD` 是为 P1 预留的产品状态。P0 的硬违规在接口层直接返回 `400`，不产生帖子记录。
+当前代码已实现 `PENDING → APPROVED / REJECTED` 和 `MACHINE_REVIEWING → APPROVED / PENDING / REJECTED`。`REJECTED_HARD` 仍由接口层直接返回 `400`，不产生帖子记录。
 
 ## 5. 发布与审核流程
 
@@ -193,13 +193,13 @@ P1/P2 继续补充：
 
 ## 8. P1 机器审核设计
 
-### 文字审核
+### 文字审核（已实现）
 
 - 首选微信小程序 `security.msgSecCheck`，需要 `access_token`、`scene` 和用户 `openid`。
 - 本地词库继续作为前置硬拦截，不替代微信/云厂商审核。
 - 同步接口超时或降级时返回 `UNKNOWN`，动态保持 `PENDING`，禁止自动放行。
 
-### 图片审核
+### 图片审核（已实现）
 
 - 首选微信 `security.mediaCheckAsync`。
 - 提交审核时生成短时签名图片 URL，供微信服务端拉取。
@@ -207,7 +207,7 @@ P1/P2 继续补充：
 - 回调验签失败直接拒绝，并记录安全日志。
 - 超过约定时间未回调，状态转为 `PENDING`，由人工处理；超时不等于通过。
 
-### 结果合并
+### 结果合并（已实现）
 
 - 本地硬违规：直接拒绝，不落公开内容。
 - 文字 risky：拒绝或进入高优先级人工队列。
@@ -224,6 +224,10 @@ P1/P2 继续补充：
 | `UGC_AUTO_APPROVE_TEXT` | `false` | P0 必须保持关闭；P1 文字机审稳定后再开启 |
 | `UGC_REQUIRE_IMAGE_REVIEW` | `true` | P0 图片必须人工复核；P1 图片机审稳定后再调整 |
 | `UGC_BLOCKED_TERMS` | 空 | 追加本地硬拦截词，英文逗号分隔 |
+| `UGC_MACHINE_REVIEW_ENABLED` | `false` | 启用微信文字/图片机审 |
+| `PUBLIC_BASE_URL` | 空 | 微信拉取图片使用的公网 HTTPS 根地址 |
+| `WECHAT_CONTENT_SECURITY_TOKEN` | 空 | 内容安全回调验签 Token |
+| `WECHAT_CONTENT_SECURITY_AES_KEY` | 空 | 可选，微信安全模式 EncodingAESKey |
 
 现有接口：
 
@@ -233,13 +237,14 @@ P1/P2 继续补充：
 - `GET /v1/admin/community/posts?status=PENDING`：按风险与等待时长返回审核队列。
 - `POST /v1/admin/community/posts/{id}/approve`：人工通过。
 - `POST /v1/admin/community/posts/{id}/reject`：人工驳回，必须填写原因。
+- `POST /v1/wechat/content-security/notify`：微信图片机审回调，验签后按 `trace_id` 幂等更新。
 
 ## 10. 分阶段计划
 
 | 阶段 | 范围 | 验收重点 |
 |---|---|---|
-| P0（本次） | 媒体签名、频控、停用禁发、风险队列 | 未审图片匿名不可读；限额生效；审核队列有序 |
-| P1 | 微信文字/图片机审、异步回调、状态扩展 | 双通过自动放行；超时/降级不误放 |
+| P0（已完成） | 媒体签名、频控、停用禁发、风险队列 | 未审图片匿名不可读；限额生效；审核队列有序 |
+| P1（已实现） | 微信文字/图片机审、异步回调、状态扩展 | 双通过自动放行；超时/降级不误放 |
 | P2 | 举报、申诉、违规计分、禁言/封号 | 处置闭环、SLA 看板、抽检与审计 |
 
 ## 11. 验收标准
@@ -255,9 +260,20 @@ P0 验收：
 7. 后台待审队列先展示 `HIGH`，同风险按等待时间升序。
 8. `go test ./...`、`go vet ./...` 和小程序静态校验通过。
 
+P1 验收：
+
+1. 文字机审 `risky` 直接转 `REJECTED`，不进入公开流。
+2. 文字通过、无图且 `UGC_AUTO_APPROVE_TEXT=true` 时可自动 `APPROVED`。
+3. 有图动态文字通过后进入 `MACHINE_REVIEWING`，全部图片 `pass` 后才自动 `APPROVED`。
+4. 任一图片 `risky` 立即转 `REJECTED`；`review`、接口错误或 30 分钟未回调转 `PENDING`。
+5. 回调签名、安全模式解密和时间戳校验失败必须拒绝，重复回调保持幂等。
+6. 机审服务整体不可用时保持 `PENDING`，不能误放行。
+
 ## 12. 关键代码位置
 
 - `internal/moderation/moderation.go`：本地文字硬规则和风险分级。
+- `internal/contentsecurity/`：微信文字/图片机审客户端、回调验签与 AES 解密。
+- `internal/store/machine_review.go`：机审状态合并、图片审核记录、超时降级。
 - `internal/httpapi/media.go`：媒体签名、签名校验和响应中的 URL 替换。
 - `internal/store/ugc_limits.go`：发帖/上传限额、账号状态和日界线。
 - `internal/store/community.go`：发布、公开流、审核队列与审核动作。

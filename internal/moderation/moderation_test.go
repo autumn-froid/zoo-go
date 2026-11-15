@@ -48,3 +48,14 @@ func TestReviewManualModeHoldsCleanText(t *testing.T) {
 		t.Fatalf("Review() = %+v, want manual review", result)
 	}
 }
+
+func TestReviewLocalSeparatesLocalRiskFromAutoApprovePolicy(t *testing.T) {
+	result := DefaultPolicy().ReviewLocal("今天猫猫很乖", 0)
+	if result.Action != ActionApprove || result.Level != LevelLow {
+		t.Fatalf("ReviewLocal() = %+v, want clean local result", result)
+	}
+	result = DefaultPolicy().ReviewLocal("联系我 13800138000", 0)
+	if result.Action != ActionReview || result.Level != LevelMedium {
+		t.Fatalf("ReviewLocal() = %+v, want local contact risk", result)
+	}
+}

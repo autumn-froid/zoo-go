@@ -70,6 +70,7 @@ const localDateInput = (date) => {
 
 const statusMap = {
     PENDING: ['待审核', 'amber'],
+    MACHINE_REVIEWING: ['机审中', 'blue'],
     APPROVED: ['已通过', 'green'],
     VERIFIED: ['已通过', 'green'],
     REJECTED: ['已驳回', 'red'],
@@ -498,7 +499,7 @@ const renderCommunity = (items) => {
     const toolbar = `
         <div class="toolbar">
             ${filterButtons('community', state.filters.community, [
-                ['PENDING', '待审核'], ['APPROVED', '已通过'], ['REJECTED', '已驳回'], ['ALL', '全部'],
+                ['PENDING', '待审核'], ['MACHINE_REVIEWING', '机审中'], ['APPROVED', '已通过'], ['REJECTED', '已驳回'], ['ALL', '全部'],
             ])}
             <div class="toolbar-spacer"></div>
             <span class="muted-cell">共 ${items.length} 条</span>

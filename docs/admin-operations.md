@@ -48,7 +48,7 @@ X-Admin-Token: <ADMIN_TOKEN>
 | 退款审核 | 查看退款申请；通过后调用微信原路退款，或填写原因驳回 |
 | 用户管理 | 按姓名、用户 ID、学校、手机号搜索；停用或恢复平台账号 |
 | 订单管理 | 按状态查看订单、交易双方、宠物、服务时间、金额和支付状态 |
-| 动态审核 | 复核社区图文动态；含图片的新动态默认进入人工审核队列 |
+| 动态审核 | 复核社区图文动态；机审通过自动公开，机审中、异常和超时内容进入人工队列 |
 | 审计日志 | 查看学籍审核、退款审核和账号处置记录 |
 
 停用账号会立即删除该用户全部登录会话，后续登录返回 `403`。恢复账号后，用户可重新走微信登录。停用原因最多 200 字，恢复时会清空停用原因。
@@ -68,14 +68,15 @@ X-Admin-Token: <ADMIN_TOKEN>
 
 社区动态审核规则：
 
-1. 新动态默认进入 `PENDING`，只有 `APPROVED` 会出现在其他用户的动态流中。
+1. 未启用机审时新动态进入 `PENDING`；启用后文字机审通过且无图时，仅 `UGC_AUTO_APPROVE_TEXT=true` 才自动通过，否则转人工；有图进入 `MACHINE_REVIEWING`。只有 `APPROVED` 会出现在其他用户的动态流中。
 2. 发布者可以在社区页看到自己的待审核或已驳回动态，以及后台填写的驳回原因。
 3. 命中违法、低俗、赌博诈骗、伤害动物等硬规则时，接口直接返回 `400`，内容不会入库。
-4. 图片无法用本地规则判断内容，默认必须人工复核；生产环境应接入微信 `mediaCheckAsync` 或云内容审核后再考虑自动放行。
+4. 启用 `mediaCheckAsync` 后，所有图片 `pass` 才自动通过；任一图片 `risky` 直接驳回；`review`、错误或 30 分钟未回调转人工。
 5. 图片必须由发布者本人上传，防止复用他人上传文件或站外 URL。
 6. 待审队列按 `HIGH → MEDIUM → LOW → UNKNOWN` 排序，同风险按等待时长升序，优先处理高风险和等待更久的内容。
 7. 新用户每日最多 3 条动态，普通用户 10 条，每日最多上传 30 张图片；超限返回 `429`。
 8. `DISABLED` 账号禁止发布动态和上传图片；审核台图片使用短时签名 URL，过期后刷新队列即可重新获取。
+9. 机审回调必须验签；`MACHINE_REVIEWING` 只表示处理中，不代表通过，也不要人工提前放行。
 
 更完整的需求、状态机、流程图和分阶段验收见 [`ugc-moderation-requirements.md`](ugc-moderation-requirements.md)，文本/图片检测选型见 [`ugc-moderation.md`](ugc-moderation.md)。
 
@@ -100,7 +101,7 @@ X-Admin-Token: <ADMIN_TOKEN>
 | GET | `/v1/admin/users?q=&status=` | 用户查询，状态支持 `ALL`、`ACTIVE`、`DISABLED` |
 | POST | `/v1/admin/users/{id}/status` | 停用或恢复用户，请求体为 `{"status":"DISABLED","reason":"..."}` |
 | GET | `/v1/admin/orders?status=` | 订单查询 |
-| GET | `/v1/admin/community/posts?status=` | 动态审核查询，状态支持 `PENDING`、`APPROVED`、`REJECTED`、`ALL` |
+| GET | `/v1/admin/community/posts?status=` | 动态审核查询，状态支持 `PENDING`、`MACHINE_REVIEWING`、`APPROVED`、`REJECTED`、`ALL` |
 | POST | `/v1/admin/community/posts/{id}/approve` | 通过动态审核 |
 | POST | `/v1/admin/community/posts/{id}/reject` | 驳回动态，请求体为 `{"reason":"..."}` |
 | GET | `/v1/admin/audit-logs?limit=` | 审计日志查询 |
@@ -124,3 +125,26 @@ X-Admin-Token: <ADMIN_TOKEN>
 - 派单对比目前只考虑距离、评分和完成经验；若用于真实自动派单，还需要位置时效、可接单状态、时段冲突、唯一领取和通知补偿。
 
 当前审计日志的 `actor` 固定为 `admin`。接入管理员账号体系后，应改为真实操作人 ID，并保证审核动作与审计写入处于同一事务或可靠事件链路中。
+
+## 7. 微信内容安全配置
+
+生产环境启用 P1 机审时至少配置：
+
+```bash
+UGC_MACHINE_REVIEW_ENABLED=true
+WECHAT_APP_ID=wx...
+WECHAT_APP_SECRET=...
+PUBLIC_BASE_URL=https://api.example.com
+WECHAT_CONTENT_SECURITY_TOKEN=...
+WECHAT_CONTENT_SECURITY_AES_KEY=... # 安全模式可选
+```
+
+小程序后台的“消息推送”地址配置为：
+
+```text
+https://api.example.com/v1/wechat/content-security/notify
+```
+
+消息推送的数据格式选择 XML。保存配置时微信会先发送 GET 验签请求，接口会校验 `signature`、`timestamp` 和 `nonce` 后原样返回 `echostr`。
+
+`PUBLIC_BASE_URL` 必须是微信服务端可访问的 HTTPS 地址；图片审核 URL 只保留 15 分钟。未配置公网地址、回调 Token 或微信接口异常时，动态不会误放行，会保持 `PENDING` 由人工处理。

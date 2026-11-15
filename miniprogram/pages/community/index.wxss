@@ -101,6 +101,11 @@
     background: #fdeceb;
 }
 
+.post-status-machine-reviewing {
+    color: #145b8a;
+    background: #e8f4fc;
+}
+
 .post-review-note {
     margin-top: 12rpx;
     padding: 12rpx 16rpx;

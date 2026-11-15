@@ -44,6 +44,20 @@ func DefaultPolicy() Policy {
 }
 
 func (p Policy) Review(content string, imageCount int) Result {
+	result := p.ReviewLocal(content, imageCount)
+	if result.Action != ActionApprove {
+		return result
+	}
+	if !p.AutoApproveText {
+		return Result{Action: ActionReview, Level: LevelMedium, Reasons: []string{"新动态需人工审核"}}
+	}
+	return result
+}
+
+// ReviewLocal applies only local content rules and does not decide whether
+// clean text is allowed to auto-publish. Machine review uses this to avoid
+// treating the conservative human-review default as a local text risk.
+func (p Policy) ReviewLocal(content string, imageCount int) Result {
 	compact := compactText(content)
 	matches := []string{}
 	for _, term := range p.blockedTerms() {
@@ -97,9 +111,6 @@ func (p Policy) Review(content string, imageCount int) Result {
 	}
 	if len(reasons) > 0 {
 		return Result{Action: ActionReview, Level: level, Reasons: reasons}
-	}
-	if !p.AutoApproveText {
-		return Result{Action: ActionReview, Level: LevelMedium, Reasons: []string{"新动态需人工审核"}}
 	}
 	return Result{Action: ActionApprove, Level: LevelLow}
 }

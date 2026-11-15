@@ -13,31 +13,40 @@ import (
 	"strings"
 	"time"
 
+	"zoo-go/internal/contentsecurity"
 	"zoo-go/internal/domain"
 	"zoo-go/internal/payment"
 	"zoo-go/internal/store"
 )
 
 type Config struct {
-	DevAuth         bool
-	WeChatAppID     string
-	WeChatAppSecret string
-	AdminToken      string
-	UploadDir       string
-	AdminDir        string
-	MediaSigningKey string
-	MediaURLTTL     time.Duration
-	Payments        *payment.Service
+	DevAuth          bool
+	WeChatAppID      string
+	WeChatAppSecret  string
+	AdminToken       string
+	UploadDir        string
+	AdminDir         string
+	MediaSigningKey  string
+	MediaURLTTL      time.Duration
+	PublicBaseURL    string
+	MediaReviewTTL   time.Duration
+	ContentSecurity  contentsecurity.Client
+	CallbackVerifier contentsecurity.NotificationVerifier
+	Payments         *payment.Service
 }
 
 type Server struct {
-	store    *store.Store
-	logger   *slog.Logger
-	config   Config
-	payments *payment.Service
-	media    mediaSigner
-	mediaTTL time.Duration
-	now      func() time.Time
+	store            *store.Store
+	logger           *slog.Logger
+	config           Config
+	payments         *payment.Service
+	media            mediaSigner
+	mediaTTL         time.Duration
+	publicBaseURL    string
+	mediaReviewTTL   time.Duration
+	contentSecurity  contentsecurity.Client
+	callbackVerifier contentsecurity.NotificationVerifier
+	now              func() time.Time
 }
 
 type contextKey string
@@ -57,6 +66,9 @@ func New(s *store.Store, config Config, logger *slog.Logger) *Server {
 	if config.MediaURLTTL <= 0 {
 		config.MediaURLTTL = defaultMediaURLTTL
 	}
+	if config.MediaReviewTTL <= 0 {
+		config.MediaReviewTTL = 30 * time.Minute
+	}
 	signingKey := strings.TrimSpace(config.MediaSigningKey)
 	if signingKey != "" && len([]byte(signingKey)) < 16 {
 		logger.Warn("UPLOAD_SIGNING_KEY is too short; using an ephemeral key instead", "minimum_bytes", 16)
@@ -69,7 +81,10 @@ func New(s *store.Store, config Config, logger *slog.Logger) *Server {
 	_ = os.MkdirAll(config.UploadDir, 0o755)
 	return &Server{
 		store: s, logger: logger, config: config, payments: config.Payments,
-		media: newMediaSigner(signingKey), mediaTTL: config.MediaURLTTL, now: time.Now,
+		media: newMediaSigner(signingKey), mediaTTL: config.MediaURLTTL,
+		publicBaseURL:  strings.TrimRight(strings.TrimSpace(config.PublicBaseURL), "/"),
+		mediaReviewTTL: config.MediaReviewTTL, contentSecurity: config.ContentSecurity,
+		callbackVerifier: config.CallbackVerifier, now: time.Now,
 	}
 }
 
@@ -129,6 +144,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/admin/refunds/{id}/reject", s.adminOnly(s.rejectRefund))
 	mux.HandleFunc("POST /v1/payments/wechat/notify", s.wechatPaymentNotify)
 	mux.HandleFunc("POST /v1/refunds/wechat/notify", s.wechatRefundNotify)
+	mux.HandleFunc("GET /v1/wechat/content-security/notify", s.wechatContentSecurityVerify)
+	mux.HandleFunc("POST /v1/wechat/content-security/notify", s.wechatContentSecurityNotify)
 	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/", http.StatusTemporaryRedirect)
 	})
