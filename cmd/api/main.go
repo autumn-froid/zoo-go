@@ -13,6 +13,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	"zoo-go/internal/contentsecurity"
 	"zoo-go/internal/httpapi"
 	"zoo-go/internal/moderation"
 	"zoo-go/internal/observability"
@@ -68,14 +69,55 @@ func main() {
 	}
 	st.SetModerationPolicy(ugcPolicy)
 
+	var contentSecurityClient contentsecurity.Client
+	var callbackVerifier contentsecurity.NotificationVerifier
+	if envBool("UGC_MACHINE_REVIEW_ENABLED", false) {
+		client, err := contentsecurity.NewWeChatClient(contentsecurity.Config{
+			AppID: os.Getenv("WECHAT_APP_ID"), AppSecret: os.Getenv("WECHAT_APP_SECRET"),
+		})
+		if err != nil {
+			logger.Error("initialize wechat content security", "error", err)
+			os.Exit(1)
+		}
+		contentSecurityClient = client
+		callbackToken := strings.TrimSpace(os.Getenv("WECHAT_CONTENT_SECURITY_TOKEN"))
+		if callbackToken == "" {
+			logger.Warn("WECHAT_CONTENT_SECURITY_TOKEN is not set; image review callbacks cannot be verified")
+		} else {
+			verifier, err := contentsecurity.NewVerifier(contentsecurity.CallbackConfig{
+				Token:          callbackToken,
+				EncodingAESKey: os.Getenv("WECHAT_CONTENT_SECURITY_AES_KEY"),
+				AppID:          os.Getenv("WECHAT_APP_ID"),
+			})
+			if err != nil {
+				logger.Error("initialize wechat content security callback", "error", err)
+				os.Exit(1)
+			}
+			callbackVerifier = verifier
+		}
+		publicBaseURL := strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL"))
+		if publicBaseURL == "" {
+			logger.Warn("PUBLIC_BASE_URL is not set; image machine review will fall back to manual review")
+		} else if !strings.HasPrefix(publicBaseURL, "https://") && !strings.HasPrefix(publicBaseURL, "http://") {
+			logger.Error("PUBLIC_BASE_URL must be an absolute http(s) URL")
+			os.Exit(1)
+		}
+		logger.Info("wechat content security enabled")
+	} else {
+		logger.Info("wechat content security disabled; UGC remains on local rules and manual review")
+	}
+
 	apiConfig := httpapi.Config{
-		DevAuth:         envBool("DEV_AUTH", false),
-		WeChatAppID:     os.Getenv("WECHAT_APP_ID"),
-		WeChatAppSecret: os.Getenv("WECHAT_APP_SECRET"),
-		AdminToken:      os.Getenv("ADMIN_TOKEN"),
-		UploadDir:       *uploadDir,
-		AdminDir:        *adminDir,
-		MediaSigningKey: os.Getenv("UPLOAD_SIGNING_KEY"),
+		DevAuth:          envBool("DEV_AUTH", false),
+		WeChatAppID:      os.Getenv("WECHAT_APP_ID"),
+		WeChatAppSecret:  os.Getenv("WECHAT_APP_SECRET"),
+		AdminToken:       os.Getenv("ADMIN_TOKEN"),
+		UploadDir:        *uploadDir,
+		AdminDir:         *adminDir,
+		MediaSigningKey:  os.Getenv("UPLOAD_SIGNING_KEY"),
+		PublicBaseURL:    strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")),
+		ContentSecurity:  contentSecurityClient,
+		CallbackVerifier: callbackVerifier,
 	}
 	payments, err := buildPaymentService(st, logger)
 	if err != nil {
@@ -86,6 +128,7 @@ func main() {
 
 	appCtx, cancelApp := context.WithCancel(context.Background())
 	defer cancelApp()
+	go runMachineReviewExpiry(appCtx, st, logger)
 	if payments != nil {
 		go payments.Run(appCtx, 30*time.Second)
 		logger.Info("wechat pay enabled", "maintenance_interval", "30s")
@@ -120,6 +163,26 @@ func main() {
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Error("graceful shutdown", "error", err)
+	}
+}
+
+func runMachineReviewExpiry(ctx context.Context, st *store.Store, logger *slog.Logger) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			expired, err := st.ExpireMachineReviews(now)
+			if err != nil {
+				logger.Error("expire machine media reviews", "error", err)
+				continue
+			}
+			if expired > 0 {
+				logger.Info("machine media reviews expired", "count", expired)
+			}
+		}
 	}
 }
 

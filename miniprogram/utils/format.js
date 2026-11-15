@@ -119,12 +119,15 @@ const relativeTime = (value) => {
 const decoratePost = (post) => {
     const author = post.author || {}
     const moderationStatus = post.moderationStatus || 'APPROVED'
-    const statusText = moderationStatus === 'PENDING' ? '审核中' : moderationStatus === 'REJECTED' ? '未通过' : ''
+    const statusText = moderationStatus === 'PENDING' ? '审核中'
+        : moderationStatus === 'MACHINE_REVIEWING' ? '机审中'
+            : moderationStatus === 'REJECTED' ? '未通过' : ''
+    const statusClass = moderationStatus === 'MACHINE_REVIEWING' ? 'machine-reviewing' : moderationStatus.toLowerCase()
     return {
         ...post,
         moderationStatus,
         statusText,
-        statusClass: moderationStatus.toLowerCase(),
+        statusClass,
         author: {
             ...author,
             avatarUrl: mediaUrl(author.avatar),

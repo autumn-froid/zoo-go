@@ -248,6 +248,15 @@ func (s *Store) userByID(userID string) (dbUser, error) {
 	return user, err
 }
 
+func (s *Store) UserOpenID(userID string) (string, error) {
+	var openID string
+	err := s.db.QueryRow(`SELECT open_id FROM users WHERE id = ?`, userID).Scan(&openID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", notFound("用户不存在")
+	}
+	return openID, err
+}
+
 func (s *Store) profileFromUser(user dbUser) (domain.Profile, error) {
 	var completed int
 	if err := s.db.QueryRow(`
