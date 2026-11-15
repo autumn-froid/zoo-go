@@ -64,13 +64,14 @@
             <view class="card">
                 <view class="photo-grid">
                     <image
-                        wx:for="{{task.photos}}"
-                        wx:key="*this"
+                        wx:for="{{evidence}}"
+                        wx:key="path"
                         class="upload-photo"
-                        src="{{item}}"
+                        src="{{item.url}}"
                         mode="aspectFill"
-                        data-src="{{item}}"
+                        data-src="{{item.url}}"
                         bindtap="previewEvidence"
+                        binderror="onEvidenceImageError"
                     />
                 </view>
                 <view class="waiting-box">
