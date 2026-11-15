@@ -1,6 +1,7 @@
 package security
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -40,14 +41,18 @@ func TestPIICipherRejectsTamperingAndUsesDeterministicLookup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt() error = %v", err)
 	}
-	tampered := encrypted[:len(encrypted)-1] + "A"
-	if tampered == encrypted {
-		tampered = encrypted[:len(encrypted)-1] + "B"
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(encrypted, encryptedPrefix))
+	if err != nil {
+		t.Fatalf("decode ciphertext: %v", err)
 	}
+	payload[len(payload)/2] ^= 1
+	tampered := encryptedPrefix + base64.RawURLEncoding.EncodeToString(payload)
 	if _, err := cipher.Decrypt("student.chsi", tampered); err == nil {
 		t.Fatal("tampered ciphertext unexpectedly decrypted")
 	}
-	if cipher.Lookup("student.chsi", "ABC123") != cipher.Lookup("student.chsi", "ABC123") {
+	firstLookup := cipher.Lookup("student.chsi", "ABC123")
+	secondLookup := cipher.Lookup("student.chsi", "ABC123")
+	if firstLookup != secondLookup {
 		t.Fatal("lookup hash is not deterministic")
 	}
 	if cipher.Lookup("student.chsi", "ABC123") == cipher.Lookup("student.chsi", "ABC124") {
