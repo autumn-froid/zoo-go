@@ -3,6 +3,7 @@ const TOKEN_KEY = 'zoo.adminToken'
 const VIEW_META = {
     overview: {eyebrow: '运营工作台', title: '运营概览', subtitle: '查看平台实时状态与待处理事项。'},
     dispatch: {eyebrow: '智能调度', title: '5km 派单对比', subtitle: '用真实待派任务对比贪心与 KM（匈牙利算法）的批量匹配结果。'},
+    leads: {eyebrow: '增长线索', title: '试点留资', subtitle: '官网申请开通试点的主人与学生线索，便于运营跟进。'},
     verifications: {eyebrow: '准入管理', title: '学籍审核', subtitle: '核验学生身份与在校状态，控制平台报价准入。'},
     identities: {eyebrow: '准入管理', title: '实名认证审核', subtitle: '人工或第三方核验姓名与身份证件号码，决定双方交易准入。'},
     refunds: {eyebrow: '资金处置', title: '退款审核', subtitle: '处理主人退款申请，并跟进微信原路退款结果。'},
@@ -16,6 +17,7 @@ const state = {
     token: '',
     view: 'overview',
     filters: {
+        leads: 'NEW',
         verifications: 'PENDING',
         identities: 'PENDING',
         refunds: 'REQUESTED',
@@ -273,6 +275,40 @@ const renderOverview = (overview) => {
                 </div>
             </section>
         </div>
+    `
+}
+
+const leadRoleLabel = (role) => role === 'student' ? '在校学生' : '宠物主人'
+
+const renderLeads = (items) => {
+    const toolbar = `
+        <div class="toolbar">
+            ${filterButtons('leads', state.filters.leads, [
+                ['NEW', '待跟进'], ['CONTACTED', '已联系'], ['CLOSED', '已关闭'], ['ALL', '全部'],
+            ])}
+            <div class="toolbar-spacer"></div>
+            <span class="muted-cell">共 ${items.length} 条</span>
+        </div>
+    `
+    if (!items.length) {
+        root.innerHTML = toolbar + emptyState('暂无试点留资', '官网「申请试点开通」提交的线索会出现在这里。')
+        return
+    }
+    root.innerHTML = toolbar + `
+        <div class="table-wrap"><table>
+            <thead><tr><th>联系人</th><th>身份</th><th>手机号</th><th>小区 / 学校</th><th>备注</th><th>来源</th><th>提交时间</th></tr></thead>
+            <tbody>${items.map((item) => `
+                <tr>
+                    <td><strong>${escapeHTML(item.name)}</strong></td>
+                    <td>${escapeHTML(leadRoleLabel(item.role))}</td>
+                    <td><span class="mono">${escapeHTML(item.phone)}</span></td>
+                    <td>${escapeHTML(item.community || '—')}</td>
+                    <td class="muted-cell" style="max-width:240px">${escapeHTML(item.note || '—')}</td>
+                    <td class="muted-cell">${escapeHTML(item.source || 'website')}</td>
+                    <td class="muted-cell">${formatDate(item.createdAt)}</td>
+                </tr>
+            `).join('')}</tbody>
+        </table></div>
     `
 }
 
@@ -617,6 +653,10 @@ const loadView = async () => {
         } else if (state.view === 'dispatch') {
             state.data.dispatch = await api('/v1/admin/dispatch/compare?limit=50')
             renderDispatch(state.data.dispatch)
+        } else if (state.view === 'leads') {
+            const status = state.filters.leads
+            state.data.leads = await api(`/v1/admin/leads?status=${encodeURIComponent(status)}`)
+            renderLeads(state.data.leads)
         } else if (state.view === 'verifications') {
             const status = state.filters.verifications
             state.data.verifications = await api(`/v1/admin/student-verifications?status=${encodeURIComponent(status)}`)

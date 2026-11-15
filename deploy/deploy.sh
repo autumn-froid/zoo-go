@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEPLOY_DIR="$ROOT_DIR/deploy"
-IMAGE_TAG="${1:-}"
+API_IMAGE="${1:-}"
+WEB_IMAGE="${2:-}"
 
 cd "$DEPLOY_DIR"
 
@@ -38,24 +39,43 @@ ensure_secret() {
 ensure_secret PII_ENCRYPTION_KEY
 ensure_secret PII_HASH_KEY
 
-mkdir -p "$ROOT_DIR/data/uploads" "$ROOT_DIR/data/openobserve" "$ROOT_DIR/secrets"
+mkdir -p \
+  "$ROOT_DIR/data/uploads" \
+  "$ROOT_DIR/data/openobserve" \
+  "$ROOT_DIR/data/caddy/data" \
+  "$ROOT_DIR/data/caddy/config" \
+  "$ROOT_DIR/secrets"
 # Container runs as uid 10001; host-mounted SQLite needs write access.
 if [[ "$(id -u)" -eq 0 ]]; then
   chown -R 10001:10001 "$ROOT_DIR/data" || true
 fi
 
-if [[ -n "$IMAGE_TAG" ]]; then
-  if grep -q '^ZOO_IMAGE=' .env; then
-    sed -i.bak "s|^ZOO_IMAGE=.*|ZOO_IMAGE=$IMAGE_TAG|" .env
+upsert_env() {
+  local key="$1"
+  local value="$2"
+  if grep -q "^${key}=" .env; then
+    sed -i.bak "s|^${key}=.*|${key}=${value}|" .env
     rm -f .env.bak
   else
-    echo "ZOO_IMAGE=$IMAGE_TAG" >> .env
+    echo "${key}=${value}" >> .env
   fi
+}
+
+if [[ -n "$API_IMAGE" ]]; then
+  upsert_env ZOO_IMAGE "$API_IMAGE"
+fi
+if [[ -n "$WEB_IMAGE" ]]; then
+  upsert_env WEB_IMAGE "$WEB_IMAGE"
 fi
 
 # Registry images should be pulled; local tags like zoo-go:local can skip.
+should_pull=false
 zoo_image="$(grep -E '^ZOO_IMAGE=' .env | cut -d= -f2- || true)"
-if [[ "$zoo_image" == */* ]]; then
+web_image="$(grep -E '^WEB_IMAGE=' .env | cut -d= -f2- || true)"
+if [[ "$zoo_image" == */* || "$web_image" == */* ]]; then
+  should_pull=true
+fi
+if [[ "$should_pull" == true ]]; then
   docker compose pull
 fi
 docker compose up -d --remove-orphans
