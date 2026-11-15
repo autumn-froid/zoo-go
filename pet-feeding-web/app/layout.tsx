@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Noto_Sans_SC } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { MotionProvider } from "@/components/marketing/motion-provider";
 import {
   SITE_DESCRIPTION,
@@ -86,6 +87,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         }}
       >
         <MotionProvider>{children}</MotionProvider>
+        <Analytics />
       </body>
     </html>
   );
