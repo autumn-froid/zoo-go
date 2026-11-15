@@ -129,7 +129,7 @@ Page({
                 try {
                     const photos = []
                     for (const path of this.data.photos) {
-                        photos.push((await upload(path)).url)
+                        photos.push((await upload(path)).path)
                     }
                     await request(`/v1/orders/${this.data.id}/complete`, {
                         method: 'POST',

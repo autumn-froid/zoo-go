@@ -39,6 +39,10 @@ func (s *Server) createCommunityPost(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 9<<20)
+	if err := s.store.CheckUploadAllowed(currentUser(r).ID, s.now()); err != nil {
+		writeError(w, err)
+		return
+	}
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, &uploadError{message: "请选择需要上传的图片"})
@@ -83,6 +87,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeDataStatus(w, http.StatusOK, map[string]any{
 		"url":      "/uploads/" + filename,
+		"path":     "/uploads/" + filename,
 		"filename": filename,
 		"mimeType": mimeType,
 		"size":     len(data),

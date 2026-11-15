@@ -578,9 +578,9 @@ func (s *Store) Complete(orderID string, req domain.CompleteRequest, now time.Ti
 	uniquePhotos := photos[:0]
 	seenPhotos := map[string]bool{}
 	for _, photo := range photos {
-		canonical, ok := canonicalUploadPath(photo)
-		if !ok {
-			return domain.TaskView{}, validation("服务凭证必须先上传到平台")
+		canonical, err := s.ensureUploadOwnerWith(tx, photo, req.StudentID)
+		if err != nil {
+			return domain.TaskView{}, err
 		}
 		if !seenPhotos[canonical] {
 			seenPhotos[canonical] = true

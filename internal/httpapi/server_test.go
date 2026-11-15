@@ -212,6 +212,9 @@ func TestPaymentUnavailableWithoutMerchantConfiguration(t *testing.T) {
 func TestProfileUpdate(t *testing.T) {
 	api := newTestAPI(t)
 	token, userID := login(t, api, "profile-device", http.StatusOK)
+	if err := api.st.RecordUpload(userID, "avatar.png", "avatar.png", "image/png", 128, time.Now()); err != nil {
+		t.Fatalf("RecordUpload() error = %v", err)
+	}
 
 	result := api.request(t, http.MethodPost, "/v1/profile", token, map[string]any{
 		"name": "小园", "avatar": "/uploads/avatar.png",

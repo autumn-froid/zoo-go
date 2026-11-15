@@ -70,6 +70,7 @@
                         data-src="{{image.url}}"
                         data-post-index="{{postIndex}}"
                         bindtap="previewPostImage"
+                        binderror="onPostImageError"
                     />
                 </view>
             </view>
