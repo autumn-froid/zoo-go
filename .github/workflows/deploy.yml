@@ -3,6 +3,16 @@ name: deploy
 on:
   push:
     branches: [main]
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "admin/**"
+      - "go.mod"
+      - "go.sum"
+      - "Dockerfile"
+      - "deploy/**"
+      - "docker-compose.yml"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 permissions:
