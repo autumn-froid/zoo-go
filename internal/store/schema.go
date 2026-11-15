@@ -204,6 +204,7 @@ CREATE TABLE IF NOT EXISTS community_posts (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_community_created ON community_posts(created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_community_author_created ON community_posts(author_id, created_at);
 
 CREATE TABLE IF NOT EXISTS uploads (
     id TEXT PRIMARY KEY,

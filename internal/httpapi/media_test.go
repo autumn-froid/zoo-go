@@ -50,3 +50,26 @@ func TestMediaSignatureRejectsTampering(t *testing.T) {
 		t.Fatal("expired signature was accepted")
 	}
 }
+
+func TestSignMediaValueHandlesMapValueTypes(t *testing.T) {
+	signer := newMediaSigner("test-media-signing-key")
+	now := time.Unix(1_800_000_000, 0)
+	value := map[string]any{
+		"url":     "/uploads/post.jpg",
+		"avatar":  42,
+		"caption": "/uploads/not-media.jpg",
+	}
+	signed, ok := signMediaValue(value, signer, now, time.Hour).(map[string]any)
+	if !ok {
+		t.Fatal("signed value is not a map")
+	}
+	if canonical, _ := canonicalUploadPath(signed["url"].(string)); canonical != "/uploads/post.jpg" || signed["url"] == value["url"] {
+		t.Fatalf("map url was not signed: %v", signed["url"])
+	}
+	if signed["avatar"] != 42 {
+		t.Fatalf("non-string media field changed: %v", signed["avatar"])
+	}
+	if signed["caption"] != value["caption"] {
+		t.Fatalf("non-media field changed: %v", signed["caption"])
+	}
+}

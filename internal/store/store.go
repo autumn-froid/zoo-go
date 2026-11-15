@@ -471,6 +471,9 @@ func (s *Store) Login(openID, nickname, avatar, phoneMask string, now time.Time)
 	user, err = scanUser(row)
 	isNew := errors.Is(err, sql.ErrNoRows)
 	if isNew {
+		if _, ok := canonicalUploadPath(avatar); ok {
+			return domain.Session{}, validation("新用户头像必须使用微信授权头像")
+		}
 		user = dbUser{
 			ID: newID("u"), OpenID: openID, Name: defaultName(nickname), Avatar: strings.TrimSpace(avatar),
 			PhoneMask: strings.TrimSpace(phoneMask), StudentStatus: "UNVERIFIED",
@@ -498,6 +501,13 @@ func (s *Store) Login(openID, nickname, avatar, phoneMask string, now time.Time)
 			user.Name = nickname
 		}
 		if avatar = normalizeMediaReference(avatar); avatar != "" {
+			if _, ok := canonicalUploadPath(avatar); ok {
+				canonical, err := s.ensureUploadOwnerWith(tx, avatar, user.ID)
+				if err != nil {
+					return domain.Session{}, err
+				}
+				avatar = canonical
+			}
 			user.Avatar = avatar
 		}
 		if phoneMask = strings.TrimSpace(phoneMask); phoneMask != "" {
