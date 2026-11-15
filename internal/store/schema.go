@@ -206,6 +206,23 @@ CREATE TABLE IF NOT EXISTS community_posts (
 CREATE INDEX IF NOT EXISTS idx_community_created ON community_posts(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_community_author_created ON community_posts(author_id, created_at);
 
+CREATE TABLE IF NOT EXISTS community_media_reviews (
+    id TEXT PRIMARY KEY,
+    post_id TEXT NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+    trace_id TEXT NOT NULL UNIQUE,
+    image_path TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    suggest TEXT NOT NULL DEFAULT '',
+    label INTEGER NOT NULL DEFAULT 0,
+    errcode INTEGER NOT NULL DEFAULT 0,
+    errmsg TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_community_media_post ON community_media_reviews(post_id, status);
+CREATE INDEX IF NOT EXISTS idx_community_media_expiry ON community_media_reviews(status, expires_at);
+
 CREATE TABLE IF NOT EXISTS uploads (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

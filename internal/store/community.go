@@ -104,6 +104,14 @@ func (s *Store) communityPosts(viewerID, cursor string, limit int, includeOwn bo
 }
 
 func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostRequest, now time.Time) (domain.CommunityPost, error) {
+	return s.createCommunityPost(authorID, req, now, false)
+}
+
+func (s *Store) CreateCommunityPostForMachineReview(authorID string, req domain.CreatePostRequest, now time.Time) (domain.CommunityPost, error) {
+	return s.createCommunityPost(authorID, req, now, true)
+}
+
+func (s *Store) createCommunityPost(authorID string, req domain.CreatePostRequest, now time.Time, machineReview bool) (domain.CommunityPost, error) {
 	user, err := s.userByID(authorID)
 	if err != nil {
 		return domain.CommunityPost{}, err
@@ -133,14 +141,24 @@ func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostReques
 	}
 	images = uniqueImages
 	review := s.moderation.Review(content, len(images))
+	if machineReview {
+		review = s.moderation.ReviewLocal(content, len(images))
+	}
 	if review.Action == moderation.ActionReject {
 		return domain.CommunityPost{}, validation("内容包含平台禁止的信息，请修改后重试")
 	}
 	status := domain.PostPending
 	reason := strings.Join(review.Reasons, "；")
-	if review.Action == moderation.ActionApprove {
+	if !machineReview && review.Action == moderation.ActionApprove {
 		status = domain.PostApproved
 		reason = ""
+	}
+	riskLevel := review.Level
+	if machineReview && riskLevel == moderation.LevelLow {
+		riskLevel = moderation.LevelMedium
+	}
+	if machineReview && reason == "" {
+		reason = "等待机器审核"
 	}
 	post := domain.CommunityPost{
 		ID: newID("post"),
@@ -149,7 +167,7 @@ func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostReques
 			OwnerVerified: user.OwnerVerified, StudentVerified: user.StudentVerified,
 		},
 		Content: content, Images: images, ModerationStatus: status,
-		ModerationReason: reason, RiskLevel: string(review.Level), CreatedAt: now, Mine: true,
+		ModerationReason: reason, RiskLevel: string(riskLevel), CreatedAt: now, Mine: true,
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -183,7 +201,8 @@ func (s *Store) AdminCommunityPosts(status string, limit int) ([]domain.AdminCom
 	if status == "ALL" {
 		status = ""
 	}
-	if status != "" && status != domain.PostPending && status != domain.PostApproved && status != domain.PostRejected {
+	if status != "" && status != domain.PostPending && status != domain.PostApproved &&
+		status != domain.PostRejected && status != domain.PostMachineReviewing {
 		return nil, validation("动态审核状态筛选无效")
 	}
 	order := "p.created_at DESC, p.id DESC"

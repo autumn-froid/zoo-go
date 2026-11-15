@@ -48,9 +48,10 @@ const (
 	StudentRejected   = "REJECTED"
 	StudentExpired    = "EXPIRED"
 
-	PostPending  = "PENDING"
-	PostApproved = "APPROVED"
-	PostRejected = "REJECTED"
+	PostPending          = "PENDING"
+	PostApproved         = "APPROVED"
+	PostRejected         = "REJECTED"
+	PostMachineReviewing = "MACHINE_REVIEWING"
 
 	AccountActive   = "ACTIVE"
 	AccountDisabled = "DISABLED"

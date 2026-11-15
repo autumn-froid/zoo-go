@@ -3,7 +3,9 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,10 +13,14 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
+	"zoo-go/internal/contentsecurity"
 	"zoo-go/internal/domain"
 	"zoo-go/internal/payment"
 	"zoo-go/internal/store"
@@ -26,6 +32,29 @@ type testAPI struct {
 }
 
 type fakePaymentGateway struct{}
+
+type fakeContentSecurityClient struct {
+	text     contentsecurity.TextResult
+	textErr  error
+	imageErr error
+}
+
+func (f *fakeContentSecurityClient) CheckText(context.Context, string, string) (contentsecurity.TextResult, error) {
+	return f.text, f.textErr
+}
+
+func (f *fakeContentSecurityClient) SubmitImages(_ context.Context, _ string, urls []string) ([]contentsecurity.ImageSubmission, error) {
+	if f.imageErr != nil {
+		return nil, f.imageErr
+	}
+	images := make([]contentsecurity.ImageSubmission, 0, len(urls))
+	for index, item := range urls {
+		images = append(images, contentsecurity.ImageSubmission{
+			TraceID: fmt.Sprintf("trace-%d", index+1), URL: item,
+		})
+	}
+	return images, nil
+}
 
 func (fakePaymentGateway) CreateJSAPI(_ context.Context, attempt domain.PaymentAttempt) (domain.PaymentParams, error) {
 	return domain.PaymentParams{
@@ -60,6 +89,10 @@ func (fakePaymentGateway) ParseRefundNotification(http.Header, []byte) (payment.
 }
 
 func newTestAPI(t *testing.T) *testAPI {
+	return newTestAPIWithConfig(t, nil)
+}
+
+func newTestAPIWithConfig(t *testing.T, configure func(*Config)) *testAPI {
 	t.Helper()
 	st, err := store.New(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -72,9 +105,19 @@ func newTestAPI(t *testing.T) *testAPI {
 		MediaSigningKey: "test-media-signing-key",
 		Payments:        payment.NewService(st, fakePaymentGateway{}, nil),
 	}
+	if configure != nil {
+		configure(&cfg)
+	}
 	server := httptest.NewServer(New(st, cfg, nil).Handler())
 	t.Cleanup(server.Close)
 	return &testAPI{base: server.URL, st: st}
+}
+
+func wechatCallbackSignature(token, timestamp, nonce string) string {
+	parts := []string{token, timestamp, nonce}
+	sort.Strings(parts)
+	sum := sha1.Sum([]byte(strings.Join(parts, "")))
+	return hex.EncodeToString(sum[:])
 }
 
 func (api *testAPI) loginWeChat(t *testing.T, openID, name string) (string, string) {
@@ -383,6 +426,141 @@ func TestCommunityPostModerationReviewFlow(t *testing.T) {
 	api.request(t, http.MethodPost, "/v1/community/posts", ownerToken, map[string]any{
 		"content": "借用别人的图片", "images": []string{viewerImage},
 	}, http.StatusBadRequest)
+}
+
+func TestCommunityMachineReviewCallbackFlow(t *testing.T) {
+	verifier, err := contentsecurity.NewVerifier(contentsecurity.CallbackConfig{
+		Token: "callback-token", AppID: "wx-test",
+	})
+	if err != nil {
+		t.Fatalf("NewVerifier() error = %v", err)
+	}
+	fake := &fakeContentSecurityClient{text: contentsecurity.TextResult{Suggest: contentsecurity.SuggestPass}}
+	api := newTestAPIWithConfig(t, func(cfg *Config) {
+		cfg.ContentSecurity = fake
+		cfg.CallbackVerifier = verifier
+		cfg.PublicBaseURL = "https://api.example.com"
+	})
+	ownerToken, _ := login(t, api, "machine-review-owner", http.StatusOK)
+	imageURL := api.uploadTestImage(t, ownerToken)
+	created := api.request(t, http.MethodPost, "/v1/community/posts", ownerToken, map[string]any{
+		"content": "今天猫猫很乖", "images": []string{imageURL},
+	}, http.StatusCreated)
+	post := created["data"].(map[string]any)
+	postID := post["id"].(string)
+	if post["moderationStatus"] != domain.PostMachineReviewing {
+		t.Fatalf("machine review status = %v, want %s", post["moderationStatus"], domain.PostMachineReviewing)
+	}
+	queue := api.adminRequest(t, http.MethodGet, "/v1/admin/community/posts?status=MACHINE_REVIEWING", nil, http.StatusOK)
+	if items := queue["data"].([]any); len(items) != 1 {
+		t.Fatalf("machine reviewing queue length = %d, want 1", len(items))
+	}
+
+	timestamp := fmt.Sprint(time.Now().Unix())
+	nonce := "machine-callback"
+	body := `<xml><MsgType><![CDATA[event]]></MsgType><Event><![CDATA[wxa_media_check]]></Event>` +
+		`<appid><![CDATA[wx-test]]></appid><trace_id><![CDATA[trace-1]]></trace_id>` +
+		`<errcode>0</errcode><errmsg><![CDATA[ok]]></errmsg>` +
+		`<result><suggest><![CDATA[pass]]></suggest><label>100</label></result></xml>`
+	query := url.Values{
+		"timestamp": {timestamp}, "nonce": {nonce},
+		"signature": {wechatCallbackSignature("callback-token", timestamp, nonce)},
+	}
+	request, err := http.NewRequest(http.MethodPost, api.base+"/v1/wechat/content-security/notify?"+query.Encode(), strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("callback request: %v", err)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("callback request: %v", err)
+	}
+	callbackBody, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || string(callbackBody) != "success" {
+		t.Fatalf("callback response = %d %s", response.StatusCode, callbackBody)
+	}
+	feed := api.request(t, http.MethodGet, "/v1/community/posts?limit=20", ownerToken, nil, http.StatusOK)
+	found := false
+	for _, raw := range feed["data"].(map[string]any)["items"].([]any) {
+		item := raw.(map[string]any)
+		if item["id"] == postID {
+			found = item["moderationStatus"] == domain.PostApproved
+		}
+	}
+	if !found {
+		t.Fatal("post was not approved after the image review callback")
+	}
+}
+
+func TestCommunityMachineReviewCallbackRequiresVerifier(t *testing.T) {
+	api := newTestAPI(t)
+	body := `<xml><Event>wxa_media_check</Event><trace_id>trace-1</trace_id></xml>`
+	response, err := http.Post(api.base+"/v1/wechat/content-security/notify", "application/xml", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("callback request: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("callback without verifier status = %d, want %d", response.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestCommunityMachineReviewCallbackRejectsBadSignature(t *testing.T) {
+	verifier, err := contentsecurity.NewVerifier(contentsecurity.CallbackConfig{
+		Token: "callback-token", AppID: "wx-test",
+	})
+	if err != nil {
+		t.Fatalf("NewVerifier() error = %v", err)
+	}
+	api := newTestAPIWithConfig(t, func(cfg *Config) {
+		cfg.ContentSecurity = &fakeContentSecurityClient{}
+		cfg.CallbackVerifier = verifier
+	})
+	timestamp := fmt.Sprint(time.Now().Unix())
+	body := `<xml><Event>wxa_media_check</Event><trace_id>trace-1</trace_id></xml>`
+	query := url.Values{
+		"timestamp": {timestamp}, "nonce": {"bad-signature"}, "signature": {"invalid"},
+	}
+	response, err := http.Post(api.base+"/v1/wechat/content-security/notify?"+query.Encode(), "application/xml", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("callback request: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("callback with bad signature status = %d, want %d", response.StatusCode, http.StatusForbidden)
+	}
+}
+
+func TestCommunityMachineTextRiskRejectsPost(t *testing.T) {
+	fake := &fakeContentSecurityClient{text: contentsecurity.TextResult{Suggest: contentsecurity.SuggestRisky}}
+	api := newTestAPIWithConfig(t, func(cfg *Config) {
+		cfg.ContentSecurity = fake
+		cfg.PublicBaseURL = "https://api.example.com"
+	})
+	ownerToken, _ := login(t, api, "machine-risk-owner", http.StatusOK)
+	created := api.request(t, http.MethodPost, "/v1/community/posts", ownerToken, map[string]any{
+		"content": "机器判定有风险的内容",
+	}, http.StatusCreated)
+	post := created["data"].(map[string]any)
+	if post["moderationStatus"] != domain.PostRejected || post["moderationReason"] == "" {
+		t.Fatalf("machine risky post = %+v", post)
+	}
+}
+
+func TestCommunityMachineReviewFailureFallsBackToPending(t *testing.T) {
+	fake := &fakeContentSecurityClient{textErr: errors.New("wechat unavailable")}
+	api := newTestAPIWithConfig(t, func(cfg *Config) {
+		cfg.ContentSecurity = fake
+		cfg.PublicBaseURL = "https://api.example.com"
+	})
+	ownerToken, _ := login(t, api, "machine-error-owner", http.StatusOK)
+	created := api.request(t, http.MethodPost, "/v1/community/posts", ownerToken, map[string]any{
+		"content": "机审服务异常时不能误放行",
+	}, http.StatusCreated)
+	post := created["data"].(map[string]any)
+	if post["moderationStatus"] != domain.PostPending || post["moderationReason"] == "" {
+		t.Fatalf("machine failure post = %+v", post)
+	}
 }
 
 func TestAdminStudentVerificationReview(t *testing.T) {
