@@ -145,4 +145,6 @@ WECHAT_CONTENT_SECURITY_AES_KEY=... # 安全模式可选
 https://api.example.com/v1/wechat/content-security/notify
 ```
 
+消息推送的数据格式选择 XML。保存配置时微信会先发送 GET 验签请求，接口会校验 `signature`、`timestamp` 和 `nonce` 后原样返回 `echostr`。
+
 `PUBLIC_BASE_URL` 必须是微信服务端可访问的 HTTPS 地址；图片审核 URL 只保留 15 分钟。未配置公网地址、回调 Token 或微信接口异常时，动态不会误放行，会保持 `PENDING` 由人工处理。

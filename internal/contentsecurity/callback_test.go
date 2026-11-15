@@ -66,6 +66,37 @@ func TestVerifierRejectsBadSignature(t *testing.T) {
 	}
 }
 
+func TestVerifierAcceptsURLVerification(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	verifier, err := NewVerifier(CallbackConfig{
+		Token: "callback-token", Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("NewVerifier() error = %v", err)
+	}
+	timestamp := fmt.Sprint(now.Unix())
+	nonce := "nonce-url"
+	query := url.Values{
+		"timestamp": {timestamp},
+		"nonce":     {nonce},
+		"echostr":   {"callback-ready"},
+		"signature": {signature("callback-token", timestamp, nonce)},
+	}
+	request := httptest.NewRequest("GET", "/notify?"+query.Encode(), nil)
+	echo, err := verifier.VerifyURL(request)
+	if err != nil {
+		t.Fatalf("VerifyURL() error = %v", err)
+	}
+	if echo != "callback-ready" {
+		t.Fatalf("VerifyURL() echo = %q", echo)
+	}
+	query.Set("signature", "bad")
+	request = httptest.NewRequest("GET", "/notify?"+query.Encode(), nil)
+	if _, err := verifier.VerifyURL(request); err == nil {
+		t.Fatal("VerifyURL() accepted a bad signature")
+	}
+}
+
 func TestVerifierDecryptsSafeModeCallback(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	key := []byte("12345678901234567890123456789012")

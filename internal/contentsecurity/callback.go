@@ -30,6 +30,7 @@ type Notification struct {
 
 type NotificationVerifier interface {
 	Verify(request *http.Request, body []byte) (Notification, error)
+	VerifyURL(request *http.Request) (string, error)
 }
 
 type CallbackConfig struct {
@@ -155,6 +156,24 @@ func (v *Verifier) Verify(request *http.Request, body []byte) (Notification, err
 		Suggest: suggest, Label: envelope.Result.Label,
 		ErrCode: envelope.ErrCode, ErrMsg: envelope.ErrMsg,
 	}, nil
+}
+
+func (v *Verifier) VerifyURL(request *http.Request) (string, error) {
+	query := request.URL.Query()
+	timestamp := strings.TrimSpace(query.Get("timestamp"))
+	nonce := strings.TrimSpace(query.Get("nonce"))
+	echo := strings.TrimSpace(query.Get("echostr"))
+	if timestamp == "" || nonce == "" || echo == "" {
+		return "", errors.New("missing callback timestamp, nonce, or echostr")
+	}
+	if err := v.verifyTimestamp(timestamp); err != nil {
+		return "", err
+	}
+	expected := signature(v.token, timestamp, nonce)
+	if !secureEqual(expected, query.Get("signature")) {
+		return "", errors.New("invalid callback URL signature")
+	}
+	return echo, nil
 }
 
 func (v *Verifier) verifyTimestamp(value string) error {
