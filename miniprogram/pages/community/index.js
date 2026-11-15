@@ -193,7 +193,21 @@ Page({
             }
             await this.loadPosts(true, false)
         } catch (error) {
-            wx.showToast({title: error.message, icon: 'none'})
+            if (error.code === 'RATE_LIMITED') {
+                wx.showModal({
+                    title: '今日发布已达上限',
+                    content: error.message,
+                    showCancel: false,
+                })
+            } else if (error.code === 'FORBIDDEN' || error.statusCode === 403) {
+                wx.showModal({
+                    title: '暂时无法发布',
+                    content: error.message,
+                    showCancel: false,
+                })
+            } else {
+                wx.showToast({title: error.message, icon: 'none'})
+            }
         } finally {
             this.setData({publishing: false})
         }

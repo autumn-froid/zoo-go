@@ -21,7 +21,7 @@
                 <view class="remove-image" data-index="{{index}}" catchtap="removeImage">×</view>
             </view>
         </view>
-        <view class="composer-hint">发布后进入审核；待审图片仅你和审核员可见</view>
+        <view class="composer-hint">发布后进入审核；新账号 3 条/日，普通账号 10 条/日，单帖最多 9 图；待审图片仅你和审核员可见</view>
         <view class="composer-foot">
             <view class="image-picker" bindtap="chooseImages">
                 <text class="image-picker-icon">▧</text>

@@ -18,10 +18,13 @@ Page({
     async loadProfile() {
         try {
             const profile = await request('/v1/auth/me')
+            const avatar = profile.avatar && profile.avatar.startsWith('/uploads/')
+                ? profile.avatar.split('?')[0]
+                : (profile.avatar || '')
             this.setData({
                 loading: false,
                 name: profile.name || '',
-                avatar: profile.avatar || '',
+                avatar,
                 avatarPreview: mediaUrl(profile.avatar),
                 initials: (profile.name || '宠').slice(0, 1),
             })
