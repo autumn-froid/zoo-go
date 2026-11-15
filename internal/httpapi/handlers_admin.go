@@ -14,7 +14,7 @@ func (s *Server) adminOverview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, overview)
+	s.writeData(w, overview)
 }
 
 func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +23,7 @@ func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, users)
+	s.writeData(w, users)
 }
 
 func (s *Server) adminUpdateUserStatus(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +42,7 @@ func (s *Server) adminUpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 		action = "USER_DISABLED"
 	}
 	s.recordAdminAudit(action, "user", userID, req.Reason)
-	writeData(w, map[string]bool{"ok": true})
+	s.writeData(w, map[string]bool{"ok": true})
 }
 
 func (s *Server) adminOrders(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +51,7 @@ func (s *Server) adminOrders(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, orders)
+	s.writeData(w, orders)
 }
 
 func (s *Server) adminCommunityPosts(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +60,7 @@ func (s *Server) adminCommunityPosts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, posts)
+	s.writeData(w, posts)
 }
 
 func (s *Server) adminApproveCommunityPost(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +70,7 @@ func (s *Server) adminApproveCommunityPost(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.recordAdminAudit("COMMUNITY_POST_APPROVED", "community_post", postID, "")
-	writeData(w, map[string]bool{"ok": true})
+	s.writeData(w, map[string]bool{"ok": true})
 }
 
 func (s *Server) adminRejectCommunityPost(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +85,7 @@ func (s *Server) adminRejectCommunityPost(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.recordAdminAudit("COMMUNITY_POST_REJECTED", "community_post", postID, req.Reason)
-	writeData(w, map[string]bool{"ok": true})
+	s.writeData(w, map[string]bool{"ok": true})
 }
 
 func (s *Server) adminAuditLogs(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +94,7 @@ func (s *Server) adminAuditLogs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, logs)
+	s.writeData(w, logs)
 }
 
 func (s *Server) recordAdminAudit(action, resourceType, resourceID, detail string) {

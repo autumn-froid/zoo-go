@@ -108,6 +108,9 @@ func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostReques
 	if err != nil {
 		return domain.CommunityPost{}, err
 	}
+	if err := s.enforceCommunityPostLimit(authorID, now); err != nil {
+		return domain.CommunityPost{}, err
+	}
 	content := strings.TrimSpace(req.Content)
 	images := nonEmptyStrings(req.Images)
 	if content == "" && len(images) == 0 {
@@ -122,10 +125,11 @@ func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostReques
 	seen := map[string]bool{}
 	uniqueImages := images[:0]
 	for _, image := range images {
-		if !strings.HasPrefix(image, "/uploads/") {
+		canonical, ok := canonicalUploadPath(image)
+		if !ok {
 			return domain.CommunityPost{}, validation("图片必须先上传到平台")
 		}
-		filename := strings.TrimPrefix(image, "/uploads/")
+		filename := strings.TrimPrefix(canonical, "/uploads/")
 		ownerID, err := s.UploadOwner(filename)
 		if err != nil {
 			return domain.CommunityPost{}, err
@@ -133,9 +137,9 @@ func (s *Store) CreateCommunityPost(authorID string, req domain.CreatePostReques
 		if ownerID != authorID {
 			return domain.CommunityPost{}, validation("图片必须由当前用户上传")
 		}
-		if !seen[image] {
-			seen[image] = true
-			uniqueImages = append(uniqueImages, image)
+		if !seen[canonical] {
+			seen[canonical] = true
+			uniqueImages = append(uniqueImages, canonical)
 		}
 	}
 	images = uniqueImages
@@ -182,13 +186,19 @@ func (s *Store) AdminCommunityPosts(status string, limit int) ([]domain.AdminCom
 	if status != "" && status != domain.PostPending && status != domain.PostApproved && status != domain.PostRejected {
 		return nil, validation("动态审核状态筛选无效")
 	}
+	order := "p.created_at DESC, p.id DESC"
+	if status == domain.PostPending {
+		order = `CASE p.moderation_risk
+			WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 WHEN 'LOW' THEN 2 ELSE 3 END ASC,
+			p.created_at ASC, p.id ASC`
+	}
 	rows, err := s.db.Query(`
 		SELECT p.id, p.author_id, u.name, u.avatar, p.content, p.images_json,
 		       p.moderation_status, p.moderation_risk, p.moderation_reason,
 		       p.review_note, p.created_at, p.reviewed_at
 		FROM community_posts p JOIN users u ON u.id = p.author_id
 		WHERE (? = '' OR p.moderation_status = ?)
-		ORDER BY p.created_at DESC, p.id DESC
+		ORDER BY `+order+`
 		LIMIT ?
 	`, status, status, limit)
 	if err != nil {
@@ -260,7 +270,7 @@ func (s *Store) RejectCommunityPost(id, reason string, now time.Time) error {
 }
 
 func (s *Store) RecordUpload(ownerID, filename, originalName, mimeType string, size int64, now time.Time) error {
-	if _, err := s.userByID(ownerID); err != nil {
+	if err := s.enforceUploadLimit(ownerID, now); err != nil {
 		return err
 	}
 	_, err := s.db.Exec(`

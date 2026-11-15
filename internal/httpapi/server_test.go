@@ -68,8 +68,9 @@ func newTestAPI(t *testing.T) *testAPI {
 	t.Cleanup(func() { _ = st.Close() })
 	cfg := Config{
 		DevAuth: true, AdminToken: "admin-test", UploadDir: filepath.Join(t.TempDir(), "uploads"),
-		AdminDir: filepath.Join("..", "..", "admin"),
-		Payments: payment.NewService(st, fakePaymentGateway{}, nil),
+		AdminDir:        filepath.Join("..", "..", "admin"),
+		MediaSigningKey: "test-media-signing-key",
+		Payments:        payment.NewService(st, fakePaymentGateway{}, nil),
 	}
 	server := httptest.NewServer(New(st, cfg, nil).Handler())
 	t.Cleanup(server.Close)
@@ -195,7 +196,9 @@ func TestPaymentUnavailableWithoutMerchantConfiguration(t *testing.T) {
 		t.Fatalf("store.New() error = %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	server := httptest.NewServer(New(st, Config{DevAuth: true, AdminToken: "admin-test"}, nil).Handler())
+	server := httptest.NewServer(New(st, Config{
+		DevAuth: true, AdminToken: "admin-test", MediaSigningKey: "test-media-signing-key",
+	}, nil).Handler())
 	t.Cleanup(server.Close)
 	api := &testAPI{base: server.URL, st: st}
 	token, _ := login(t, api, "no-payment-device", http.StatusOK)
@@ -214,7 +217,8 @@ func TestProfileUpdate(t *testing.T) {
 		"name": "小园", "avatar": "/uploads/avatar.png",
 	}, http.StatusOK)
 	profile := result["data"].(map[string]any)
-	if profile["id"] != userID || profile["name"] != "小园" || profile["avatar"] != "/uploads/avatar.png" {
+	avatar, ok := canonicalUploadPath(profile["avatar"].(string))
+	if profile["id"] != userID || profile["name"] != "小园" || !ok || avatar != "/uploads/avatar.png" {
 		t.Fatalf("profile update response = %+v", profile)
 	}
 
@@ -413,6 +417,58 @@ func TestAdminStudentVerificationReview(t *testing.T) {
 	if student["id"] != studentID || student["verified"] != true || student["verificationStatus"] != domain.StudentVerified {
 		t.Fatalf("approved student profile = %+v", student)
 	}
+}
+
+func TestCommunityMediaRequiresSignedURL(t *testing.T) {
+	api := newTestAPI(t)
+	ownerToken, _ := login(t, api, "media-owner", http.StatusOK)
+	viewerToken, _ := login(t, api, "media-viewer", http.StatusOK)
+
+	uploadedURL := api.uploadTestImage(t, ownerToken)
+	rawPath, ok := canonicalUploadPath(uploadedURL)
+	if !ok || rawPath == uploadedURL {
+		t.Fatalf("upload URL is not signed: %s", uploadedURL)
+	}
+	api.fetchMedia(t, rawPath, http.StatusForbidden)
+	if body := api.fetchMedia(t, uploadedURL, http.StatusOK); len(body) == 0 {
+		t.Fatal("signed upload URL returned an empty image")
+	}
+
+	created := api.request(t, http.MethodPost, "/v1/community/posts", ownerToken, map[string]any{
+		"content": "待审核图片", "images": []string{uploadedURL},
+	}, http.StatusCreated)
+	post := created["data"].(map[string]any)
+	postID := post["id"].(string)
+	postImages := post["images"].([]any)
+	if len(postImages) != 1 {
+		t.Fatalf("created post images = %+v", postImages)
+	}
+	postImageURL := postImages[0].(string)
+	if body := api.fetchMedia(t, postImageURL, http.StatusOK); len(body) == 0 {
+		t.Fatal("author could not read pending post image through signed URL")
+	}
+
+	viewerFeed := api.request(t, http.MethodGet, "/v1/community/posts?limit=20", viewerToken, nil, http.StatusOK)
+	if items := viewerFeed["data"].(map[string]any)["items"].([]any); len(items) != 0 {
+		t.Fatalf("viewer saw pending post: %+v", items)
+	}
+	api.fetchMedia(t, rawPath, http.StatusForbidden)
+
+	api.adminRequest(t, http.MethodPost, "/v1/admin/community/posts/"+postID+"/approve", nil, http.StatusOK)
+	viewerFeed = api.request(t, http.MethodGet, "/v1/community/posts?limit=20", viewerToken, nil, http.StatusOK)
+	items := viewerFeed["data"].(map[string]any)["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("approved post feed length = %d, want 1", len(items))
+	}
+	approvedImages := items[0].(map[string]any)["images"].([]any)
+	if body := api.fetchMedia(t, approvedImages[0].(string), http.StatusOK); len(body) == 0 {
+		t.Fatal("viewer could not read approved post image")
+	}
+
+	signer := newMediaSigner("test-media-signing-key")
+	expiredAt := time.Now().Add(-time.Minute).Unix()
+	expiredURL := fmt.Sprintf("%s?exp=%d&sig=%s", rawPath, expiredAt, signer.signature(rawPath, expiredAt))
+	api.fetchMedia(t, expiredURL, http.StatusForbidden)
 }
 
 func TestAdminDashboardUserControlsAndAudit(t *testing.T) {
@@ -645,6 +701,20 @@ func (api *testAPI) uploadTestImage(t *testing.T, token string) string {
 		t.Fatal("upload returned empty URL")
 	}
 	return url
+}
+
+func (api *testAPI) fetchMedia(t *testing.T, mediaPath string, wantStatus int) []byte {
+	t.Helper()
+	resp, err := http.Get(api.base + mediaPath)
+	if err != nil {
+		t.Fatalf("fetch media %s: %v", mediaPath, err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != wantStatus {
+		t.Fatalf("GET %s status = %d, want %d, body=%s", mediaPath, resp.StatusCode, wantStatus, data)
+	}
+	return data
 }
 
 func TestHandlerRejectsBadBidJSON(t *testing.T) {

@@ -905,3 +905,105 @@ func TestCommunityPostsPersistAndPaginate(t *testing.T) {
 		t.Fatal("external image URL was accepted")
 	}
 }
+
+func TestCommunityPostLimitsAndDisabledAccount(t *testing.T) {
+	st := newTestStore(t)
+	now := time.Now()
+
+	newUser := createTestUser(t, st, "新用户")
+	for index := 0; index < newUserDailyPosts; index++ {
+		if _, err := st.CreateCommunityPost(newUser.ID, domain.CreatePostRequest{
+			Content: fmt.Sprintf("新用户动态 %d", index),
+		}, now.Add(time.Duration(index)*time.Second)); err != nil {
+			t.Fatalf("new user post %d error = %v", index, err)
+		}
+	}
+	_, err := st.CreateCommunityPost(newUser.ID, domain.CreatePostRequest{Content: "超过新用户限额"}, now)
+	requireAppErrorStatus(t, err, httpStatusTooManyRequests)
+
+	normalUser := createTestUser(t, st, "老用户")
+	if _, err := st.db.Exec(`UPDATE users SET created_at = ? WHERE id = ?`, timestamp(now.Add(-30*24*time.Hour)), normalUser.ID); err != nil {
+		t.Fatalf("age user: %v", err)
+	}
+	for index := 0; index < dailyPostLimit; index++ {
+		if _, err := st.CreateCommunityPost(normalUser.ID, domain.CreatePostRequest{
+			Content: fmt.Sprintf("老用户动态 %d", index),
+		}, now.Add(time.Duration(index)*time.Second)); err != nil {
+			t.Fatalf("normal user post %d error = %v", index, err)
+		}
+	}
+	_, err = st.CreateCommunityPost(normalUser.ID, domain.CreatePostRequest{Content: "超过每日限额"}, now)
+	requireAppErrorStatus(t, err, httpStatusTooManyRequests)
+
+	disabledUser := createTestUser(t, st, "停用用户")
+	if err := st.UpdateUserAccountStatus(disabledUser.ID, domain.AccountDisabled, "测试停用", now); err != nil {
+		t.Fatalf("disable user: %v", err)
+	}
+	_, err = st.CreateCommunityPost(disabledUser.ID, domain.CreatePostRequest{Content: "停用账号动态"}, now)
+	requireAppErrorStatus(t, err, httpStatusForbidden)
+}
+
+func TestUploadDailyLimit(t *testing.T) {
+	st := newTestStore(t)
+	owner := createTestUser(t, st, "上传限额用户")
+	now := time.Now()
+	for index := 0; index < dailyUploadLimit; index++ {
+		filename := fmt.Sprintf("media_upload_%02d.jpg", index)
+		if err := st.RecordUpload(owner.ID, filename, filename, "image/jpeg", 128, now); err != nil {
+			t.Fatalf("RecordUpload(%d) error = %v", index, err)
+		}
+	}
+	err := st.RecordUpload(owner.ID, "media_upload_over.jpg", "over.jpg", "image/jpeg", 128, now)
+	requireAppErrorStatus(t, err, httpStatusTooManyRequests)
+	if err := st.RecordUpload(owner.ID, "media_upload_next_day.jpg", "next.jpg", "image/jpeg", 128, now.Add(24*time.Hour)); err != nil {
+		t.Fatalf("next-day upload error = %v", err)
+	}
+}
+
+func TestAdminCommunityQueueSortsRiskAndWaitingTime(t *testing.T) {
+	st := newTestStore(t)
+	owner := createTestUser(t, st, "审核队列用户")
+	now := time.Now()
+	pending := []struct {
+		content string
+		at      time.Time
+	}{
+		{content: "活动详情 https://example.com/old", at: now.Add(-30 * time.Minute)},
+		{content: "请核对身份证 110101199001011234", at: now.Add(-20 * time.Minute)},
+		{content: "活动详情 https://example.com/new", at: now.Add(-10 * time.Minute)},
+	}
+	for _, item := range pending {
+		if _, err := st.CreateCommunityPost(owner.ID, domain.CreatePostRequest{Content: item.content}, item.at); err != nil {
+			t.Fatalf("CreateCommunityPost(%q) error = %v", item.content, err)
+		}
+	}
+	posts, err := st.AdminCommunityPosts(domain.PostPending, 10)
+	if err != nil {
+		t.Fatalf("AdminCommunityPosts() error = %v", err)
+	}
+	if len(posts) != 3 {
+		t.Fatalf("pending queue length = %d, want 3", len(posts))
+	}
+	if posts[0].RiskLevel != "HIGH" || posts[1].Content != pending[0].content || posts[2].Content != pending[2].content {
+		t.Fatalf("unexpected moderation order: %+v", posts)
+	}
+}
+
+const (
+	httpStatusForbidden       = 403
+	httpStatusTooManyRequests = 429
+)
+
+func requireAppErrorStatus(t *testing.T, err error, want int) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("error = nil, want status %d", want)
+	}
+	var appErr *AppError
+	if !errors.As(err, &appErr) {
+		t.Fatalf("error type = %T, want *AppError", err)
+	}
+	if appErr.Status != want {
+		t.Fatalf("error status = %d, want %d (%v)", appErr.Status, want, err)
+	}
+}

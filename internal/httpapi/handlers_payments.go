@@ -34,7 +34,7 @@ func (s *Server) syncPayment(w http.ResponseWriter, r *http.Request) {
 		s.writePaymentError(w, err)
 		return
 	}
-	writeData(w, view)
+	s.writeData(w, view)
 }
 
 func (s *Server) requestRefund(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +66,7 @@ func (s *Server) adminRefunds(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, refunds)
+	s.writeData(w, refunds)
 }
 
 func (s *Server) approveRefund(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +80,7 @@ func (s *Server) approveRefund(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAdminAudit("REFUND_APPROVED", "refund", refund.ID, "退款已提交微信处理")
-	writeData(w, refund)
+	s.writeData(w, refund)
 }
 
 func (s *Server) rejectRefund(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +98,7 @@ func (s *Server) rejectRefund(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAdminAudit("REFUND_REJECTED", "refund", r.PathValue("id"), req.Reason)
-	writeData(w, map[string]bool{"ok": true})
+	s.writeData(w, map[string]bool{"ok": true})
 }
 
 func (s *Server) wechatPaymentNotify(w http.ResponseWriter, r *http.Request) {

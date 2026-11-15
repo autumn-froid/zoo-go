@@ -72,7 +72,9 @@ func (p Policy) Review(content string, imageCount int) Result {
 	}
 	if phonePattern.MatchString(compact) {
 		reasons = append(reasons, "疑似包含手机号等联系方式")
-		level = LevelHigh
+		if level == LevelLow {
+			level = LevelMedium
+		}
 	}
 	if idPattern.MatchString(compact) {
 		reasons = append(reasons, "疑似包含身份证号等敏感个人信息")

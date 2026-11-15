@@ -575,16 +575,24 @@ func (s *Store) Complete(orderID string, req domain.CompleteRequest, now time.Ti
 		return domain.TaskView{}, conflict("请先到场签到")
 	}
 	photos := nonEmptyStrings(req.Photos)
+	uniquePhotos := photos[:0]
+	seenPhotos := map[string]bool{}
+	for _, photo := range photos {
+		canonical, ok := canonicalUploadPath(photo)
+		if !ok {
+			return domain.TaskView{}, validation("服务凭证必须先上传到平台")
+		}
+		if !seenPhotos[canonical] {
+			seenPhotos[canonical] = true
+			uniquePhotos = append(uniquePhotos, canonical)
+		}
+	}
+	photos = uniquePhotos
 	if len(photos) < 2 {
 		return domain.TaskView{}, validation("完工需上传至少 2 张服务凭证")
 	}
 	if len(photos) > 9 {
 		return domain.TaskView{}, validation("服务凭证最多 9 张")
-	}
-	for _, photo := range photos {
-		if !strings.HasPrefix(photo, "/uploads/") {
-			return domain.TaskView{}, validation("服务凭证必须先上传到平台")
-		}
 	}
 	if _, err := tx.Exec(`UPDATE orders SET status = 'PENDING_CONFIRM', completed_at = ? WHERE id = ? AND status = 'IN_SERVICE'`, timestamp(now), orderID); err != nil {
 		return domain.TaskView{}, err

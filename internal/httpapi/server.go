@@ -25,6 +25,8 @@ type Config struct {
 	AdminToken      string
 	UploadDir       string
 	AdminDir        string
+	MediaSigningKey string
+	MediaURLTTL     time.Duration
 	Payments        *payment.Service
 }
 
@@ -33,6 +35,8 @@ type Server struct {
 	logger   *slog.Logger
 	config   Config
 	payments *payment.Service
+	media    mediaSigner
+	mediaTTL time.Duration
 	now      func() time.Time
 }
 
@@ -50,8 +54,19 @@ func New(s *store.Store, config Config, logger *slog.Logger) *Server {
 	if config.AdminDir == "" {
 		config.AdminDir = "admin"
 	}
+	if config.MediaURLTTL <= 0 {
+		config.MediaURLTTL = defaultMediaURLTTL
+	}
+	signingKey := strings.TrimSpace(config.MediaSigningKey)
+	if signingKey == "" {
+		signingKey = randomMediaSigningKey()
+		logger.Warn("UPLOAD_SIGNING_KEY is not set; using an ephemeral key, media URLs will expire after restart")
+	}
 	_ = os.MkdirAll(config.UploadDir, 0o755)
-	return &Server{store: s, logger: logger, config: config, payments: config.Payments, now: time.Now}
+	return &Server{
+		store: s, logger: logger, config: config, payments: config.Payments,
+		media: newMediaSigner(signingKey), mediaTTL: config.MediaURLTTL, now: time.Now,
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -118,15 +133,7 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		adminFiles.ServeHTTP(w, r)
 	}))
-	uploads := http.StripPrefix("/uploads/", http.FileServer(http.Dir(s.config.UploadDir)))
-	mux.Handle("GET /uploads/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/uploads/" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Cache-Control", "public, max-age=86400")
-		uploads.ServeHTTP(w, r)
-	}))
+	mux.HandleFunc("GET /uploads/", s.mediaHandler)
 	mux.Handle("/v1/", s.authenticate(api))
 	return s.middleware(mux)
 }
@@ -207,8 +214,12 @@ type apiError struct {
 	Message string `json:"message"`
 }
 
-func writeData(w http.ResponseWriter, data any) {
-	writeJSON(w, http.StatusOK, envelope{Data: data})
+func (s *Server) writeData(w http.ResponseWriter, data any) {
+	s.writeDataStatus(w, http.StatusOK, data)
+}
+
+func (s *Server) writeDataStatus(w http.ResponseWriter, status int, data any) {
+	writeJSON(w, status, envelope{Data: signMediaValue(data, s.media, s.now(), s.mediaTTL)})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

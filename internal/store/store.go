@@ -284,6 +284,13 @@ func (s *Store) UpdateProfile(userID string, req domain.UpdateProfileRequest, no
 		return domain.Profile{}, validation("昵称不能超过 24 字")
 	}
 	avatar := strings.TrimSpace(req.Avatar)
+	if strings.HasPrefix(avatar, "/uploads/") {
+		canonical, ok := canonicalUploadPath(avatar)
+		if !ok {
+			return domain.Profile{}, validation("头像地址无效")
+		}
+		avatar = canonical
+	}
 	if avatar != "" && !strings.HasPrefix(avatar, "/uploads/") && !strings.HasPrefix(avatar, "https://") {
 		return domain.Profile{}, validation("头像必须先上传到平台")
 	}
@@ -407,6 +414,13 @@ func (s *Store) CreatePet(ownerID string, req domain.CreatePetRequest, now time.
 		return domain.Pet{}, validation("宠物说明不能超过 300 字")
 	}
 	image := strings.TrimSpace(req.Image)
+	if strings.HasPrefix(image, "/uploads/") {
+		canonical, ok := canonicalUploadPath(image)
+		if !ok {
+			return domain.Pet{}, validation("宠物图片地址无效")
+		}
+		image = canonical
+	}
 	if image == "" {
 		if req.Species == "猫" {
 			image = "/assets/pets/cat.jpg"
@@ -483,7 +497,7 @@ func (s *Store) Login(openID, nickname, avatar, phoneMask string, now time.Time)
 		if nickname = strings.TrimSpace(nickname); nickname != "" {
 			user.Name = nickname
 		}
-		if avatar = strings.TrimSpace(avatar); avatar != "" {
+		if avatar = normalizeMediaReference(avatar); avatar != "" {
 			user.Avatar = avatar
 		}
 		if phoneMask = strings.TrimSpace(phoneMask); phoneMask != "" {

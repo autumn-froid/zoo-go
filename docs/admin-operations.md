@@ -16,6 +16,14 @@ http://127.0.0.1:8080/admin/
 DEV_AUTH=true ADMIN_TOKEN=dev-admin ./scripts/run-local.sh
 ```
 
+图片和审核材料通过短时签名 URL 访问，生产环境还需要配置独立的媒体签名密钥：
+
+```bash
+UPLOAD_SIGNING_KEY="$(openssl rand -hex 32)" ./scripts/run-local.sh
+```
+
+未设置时服务会生成进程级临时密钥，服务重启后旧图片 URL 会失效；多实例部署必须使用同一个固定密钥。
+
 生产环境必须使用高强度随机值，并通过 HTTPS 暴露服务：
 
 ```bash
@@ -65,8 +73,11 @@ X-Admin-Token: <ADMIN_TOKEN>
 3. 命中违法、低俗、赌博诈骗、伤害动物等硬规则时，接口直接返回 `400`，内容不会入库。
 4. 图片无法用本地规则判断内容，默认必须人工复核；生产环境应接入微信 `mediaCheckAsync` 或云内容审核后再考虑自动放行。
 5. 图片必须由发布者本人上传，防止复用他人上传文件或站外 URL。
+6. 待审队列按 `HIGH → MEDIUM → LOW → UNKNOWN` 排序，同风险按等待时长升序，优先处理高风险和等待更久的内容。
+7. 新用户每日最多 3 条动态，普通用户 10 条，每日最多上传 30 张图片；超限返回 `429`。
+8. `DISABLED` 账号禁止发布动态和上传图片；审核台图片使用短时签名 URL，过期后刷新队列即可重新获取。
 
-更完整的文本/图片检测选型与上线建议见 [`ugc-moderation.md`](ugc-moderation.md)。
+更完整的需求、状态机、流程图和分阶段验收见 [`ugc-moderation-requirements.md`](ugc-moderation-requirements.md)，文本/图片检测选型见 [`ugc-moderation.md`](ugc-moderation.md)。
 
 ## 4. 派单对比
 
