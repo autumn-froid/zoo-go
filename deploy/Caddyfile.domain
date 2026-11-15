@@ -1,0 +1,26 @@
+# Use this after ICP filing + DNS A/AAAA for homepet.cn point at the ECS.
+# Copy over Caddyfile (or symlink) and redeploy:
+#   cp deploy/Caddyfile.domain deploy/Caddyfile
+#   ./deploy/deploy.sh
+
+homepet.cn {
+	encode gzip zstd
+
+	handle /v1* {
+		reverse_proxy api:8080
+	}
+	handle /admin* {
+		reverse_proxy api:8080
+	}
+	handle /uploads* {
+		reverse_proxy api:8080
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+www.homepet.cn {
+	redir https://homepet.cn{uri} permanent
+}

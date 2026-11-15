@@ -1,10 +1,12 @@
-# Public site + API on one host (TLS via Let's Encrypt).
-# Point DNS A/AAAA for homepet.cn (and optional www) at this machine first.
+# Temporary: ICP filing not ready — serve over public IP on :80 (no TLS).
+# Access: http://<ECS公网IP>/  http://<ECS公网IP>/v1/healthz  http://<ECS公网IP>/admin/
+#
+# After 备案 + DNS for homepet.cn, replace this file with Caddyfile.domain
+# (or copy that content here) and redeploy so Caddy can issue HTTPS.
 
-homepet.cn {
+:80 {
 	encode gzip zstd
 
-	# Go API + admin UI + signed uploads
 	handle /v1* {
 		reverse_proxy api:8080
 	}
@@ -15,12 +17,7 @@ homepet.cn {
 		reverse_proxy api:8080
 	}
 
-	# Marketing site (Next.js)
 	handle {
 		reverse_proxy web:3000
 	}
-}
-
-www.homepet.cn {
-	redir https://homepet.cn{uri} permanent
 }
