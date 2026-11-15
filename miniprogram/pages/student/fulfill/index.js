@@ -1,4 +1,4 @@
-const {request, q, upload} = require('../../../utils/api')
+const {request, q, upload, mediaUrl} = require('../../../utils/api')
 const {decorateTask, tapFeedback} = require('../../../utils/format')
 
 Page({
@@ -74,16 +74,24 @@ Page({
             wx.showToast({title: '最多上传 4 张凭证', icon: 'none'})
             return
         }
-        wx.chooseMedia({
+        const options = {
             count: remaining,
             mediaType: ['image'],
             sourceType: ['camera', 'album'],
             sizeType: ['compressed'],
             success: (result) => {
-                const paths = result.tempFiles.map((file) => file.tempFilePath)
-                this.setData({photos: this.data.photos.concat(paths)})
+                const paths = result.tempFiles
+                    ? result.tempFiles.map((file) => file.tempFilePath)
+                    : (result.tempFilePaths || [])
+                const photos = this.data.photos.concat(paths.filter(Boolean).map((path) => ({path, url: '', src: path})))
+                this.setData({photos})
             },
-        })
+        }
+        if (wx.chooseMedia) {
+            wx.chooseMedia(options)
+        } else {
+            wx.chooseImage(options)
+        }
     },
 
     removePhoto(event) {
@@ -96,7 +104,7 @@ Page({
     previewPhoto(event) {
         wx.previewImage({
             current: event.currentTarget.dataset.src,
-            urls: this.data.photos,
+            urls: this.data.photos.map((photo) => photo.src),
         })
     },
 
@@ -127,13 +135,21 @@ Page({
                 }
                 this.setData({actionLoading: true})
                 try {
-                    const photos = []
-                    for (const path of this.data.photos) {
-                        photos.push((await upload(path)).path)
+                    const photos = this.data.photos.slice()
+                    for (let index = 0; index < photos.length; index += 1) {
+                        if (!photos[index].url) {
+                            const result = await upload(photos[index].path)
+                            photos[index] = {
+                                ...photos[index],
+                                url: result.path,
+                                src: mediaUrl(result.url),
+                            }
+                            this.setData({photos})
+                        }
                     }
                     await request(`/v1/orders/${this.data.id}/complete`, {
                         method: 'POST',
-                        data: {photos},
+                        data: {photos: photos.map((photo) => photo.url).filter(Boolean)},
                     })
                     wx.showToast({title: '完工凭证已提交', icon: 'success'})
                     this.setData({photos: []})

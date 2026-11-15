@@ -45,8 +45,8 @@
             <view class="section-head"><text class="section-title">上传服务凭证</text><text class="tiny muted">至少 2 张</text></view>
             <view class="card evidence-upload">
                 <view class="photo-grid">
-                    <view class="photo-cell" wx:for="{{photos}}" wx:key="*this">
-                        <image class="upload-photo" src="{{item}}" mode="aspectFill" data-src="{{item}}" bindtap="previewPhoto" />
+                    <view class="photo-cell" wx:for="{{photos}}" wx:key="path">
+                        <image class="upload-photo" src="{{item.src}}" mode="aspectFill" data-src="{{item.src}}" bindtap="previewPhoto" />
                         <view class="remove-photo" data-index="{{index}}" catchtap="removePhoto">×</view>
                     </view>
                     <view wx:if="{{photos.length < 4}}" class="add-photo" bindtap="choosePhotos">
