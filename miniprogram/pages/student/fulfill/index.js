@@ -8,6 +8,7 @@ Page({
         actionLoading: false,
         task: null,
         photos: [],
+        evidence: [],
     },
 
     onLoad(options) {
@@ -31,7 +32,12 @@ Page({
         }
         try {
             const task = await request(`/v1/orders/${this.data.id}?${q({role: 'student'})}`)
-            this.setData({loading: false, task: decorateTask(task)})
+            const decorated = decorateTask(task)
+            const evidence = (decorated.photos || []).map((url) => ({
+                path: String(url).split('?')[0],
+                url,
+            }))
+            this.setData({loading: false, task: decorated, evidence})
         } catch (error) {
             this.setData({loading: false})
             wx.showToast({title: error.message, icon: 'none'})
@@ -111,8 +117,17 @@ Page({
     previewEvidence(event) {
         wx.previewImage({
             current: event.currentTarget.dataset.src,
-            urls: this.data.task.photos,
+            urls: this.data.evidence.map((photo) => photo.url),
         })
+    },
+
+    onEvidenceImageError() {
+        const now = Date.now()
+        if (this.evidenceRefreshAt && now - this.evidenceRefreshAt < 60000) {
+            return
+        }
+        this.evidenceRefreshAt = now
+        this.loadOrder(false)
     },
 
     complete() {
@@ -155,7 +170,21 @@ Page({
                     this.setData({photos: []})
                     await this.loadOrder(false)
                 } catch (error) {
-                    wx.showToast({title: error.message, icon: 'none'})
+                    if (error.code === 'RATE_LIMITED') {
+                        wx.showModal({
+                            title: '今日上传已达上限',
+                            content: error.message,
+                            showCancel: false,
+                        })
+                    } else if (error.code === 'FORBIDDEN' || error.statusCode === 403) {
+                        wx.showModal({
+                            title: '暂时无法提交',
+                            content: error.message,
+                            showCancel: false,
+                        })
+                    } else {
+                        wx.showToast({title: error.message, icon: 'none'})
+                    }
                 } finally {
                     this.setData({actionLoading: false})
                 }
