@@ -15,10 +15,10 @@ export function getSiteUrl(): string {
 
 export const SITE_NAME = "喂宠到家";
 
-export const SITE_TITLE = "喂宠到家｜马连洼上门喂宠竞价";
+export const SITE_TITLE = "喂宠到家｜上门喂宠竞价";
 
 export const SITE_DESCRIPTION =
-  "你设预算上限，核验学生来报价，你来选人。实名+学籍核验、成交前隐藏门牌、服务凭证验收。申请海淀马连洼试点开通。";
+  "你设预算上限，实名核验通过的宠护师来报价，你来选人。实名核验、成交前隐藏门牌、服务凭证验收。覆盖各省各市已开通小区。";
 
 export const SITE_OG_DESCRIPTION =
   "出门在外，毛孩子有人管。社区上门喂宠反向竞价平台，申请试点开通。";

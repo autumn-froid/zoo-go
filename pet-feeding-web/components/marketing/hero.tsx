@@ -37,7 +37,7 @@ export function Hero() {
         <div className="max-w-xl">
           <p className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
             <MapPin className="size-3.5 shrink-0" aria-hidden />
-            海淀马连洼街道试点开放中
+            各省各市已开通小区可发单
           </p>
           <h1 className="mt-4 text-4xl font-bold tracking-tight text-foreground sm:mt-6 sm:text-5xl lg:text-6xl">
             喂宠到家
@@ -48,7 +48,7 @@ export function Hero() {
             毛孩子有人管
           </p>
           <p className="mt-4 max-w-md text-base leading-relaxed text-muted-foreground sm:mt-6 sm:text-lg sm:leading-relaxed">
-            马连洼上门喂宠竞价：你设预算上限，核验通过的在校学生来报价，你来选人。成交前隐藏门牌，服务后照片验收。
+            上门喂宠竞价：你设预算上限，实名核验通过的宠护师来报价，你来选人。成交前隐藏门牌，服务后照片验收。
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3 sm:mt-8 md:mt-10">
             <a

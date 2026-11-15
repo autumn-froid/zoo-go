@@ -126,12 +126,14 @@ export function LeadForm({
           noValidate
         >
           <fieldset>
-            <legend className="text-sm font-medium text-foreground">我是</legend>
+            <legend className="text-sm font-medium text-foreground">
+              我是
+            </legend>
             <div className="mt-2 grid grid-cols-2 gap-2">
               {(
                 [
                   ["owner", "宠物主人"],
-                  ["student", "在校学生"],
+                  ["student", "宠护师（需实名）"],
                 ] as const
               ).map(([value, label]) => (
                 <button
@@ -184,7 +186,7 @@ export function LeadForm({
 
           <label className="block space-y-1.5">
             <span className="text-sm font-medium text-foreground">
-              {form.role === "student" ? "学校 / 常驻区域" : "小区名称"}
+              {form.role === "student" ? "常驻城市 / 区域" : "小区名称"}
             </span>
             <input
               name="community"
@@ -193,8 +195,8 @@ export function LeadForm({
               className="h-11 w-full rounded-xl border border-input bg-card px-3 text-base text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/40 sm:text-sm"
               placeholder={
                 form.role === "student"
-                  ? "例如：中国农业大学 / 马连洼"
-                  : "例如：朗润园"
+                  ? "例如：所在省市 / 常驻区域"
+                  : "例如：所在小区名称"
               }
               maxLength={80}
             />
@@ -236,7 +238,7 @@ export function LeadForm({
                 提交中…
               </>
             ) : form.role === "student" ? (
-              "申请成为喂宠员"
+              "申请成为宠护师"
             ) : (
               "申请试点开通"
             )}
@@ -288,7 +290,7 @@ export function LeadSection() {
             留下联系方式，我们帮你开通
           </h2>
           <p className="mt-4 max-w-md text-muted-foreground leading-relaxed">
-            马连洼试点扩区与学生招募优先处理官网留资。提交后运营会在工作日内联系，确认小区覆盖或引导完成小程序认证。
+            各省各市扩区与宠护师招募优先处理官网留资。提交后运营会在工作日内联系，确认小区覆盖或引导完成小程序实名认证。
           </p>
           <ul className="mt-8 space-y-3 text-sm text-foreground">
             <li className="flex gap-2">
@@ -297,7 +299,7 @@ export function LeadSection() {
             </li>
             <li className="flex gap-2">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-trust" />
-              学生：申请核验成为喂宠员
+              普通人：完成实名核验成为宠护师
             </li>
             <li className="flex gap-2">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground" />

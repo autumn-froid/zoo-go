@@ -39,10 +39,9 @@ export const metadata: Metadata = {
   keywords: [
     "上门喂宠",
     "宠物照看",
-    "马连洼",
-    "海淀",
+    "各省各市",
     "喂宠到家",
-    "学生喂宠",
+    "实名喂宠",
     "宠物代喂",
   ],
   authors: [{ name: SITE_NAME }],

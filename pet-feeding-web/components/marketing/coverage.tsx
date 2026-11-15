@@ -23,10 +23,10 @@ export function Coverage() {
       <div className="mx-auto grid max-w-6xl gap-12 px-4 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-16">
         <Reveal>
           <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            先把一个街道做扎实
+            覆盖各省各市已开通小区
           </h2>
           <p className="mt-4 max-w-prose text-muted-foreground leading-relaxed">
-            当前试点覆盖北京市海淀区马连洼街道及已开通小区。未在开放范围内的地址无法发单——若你的小区尚未开通，留下联系方式，我们会优先评估扩区。
+            当前服务覆盖各省各市已开通小区。未在开放范围内的地址无法发单——若你的小区尚未开通，留下联系方式，我们会优先评估扩区。
           </p>
           <motion.div
             className="mt-8 inline-flex"
@@ -81,8 +81,7 @@ export function Coverage() {
                 ))}
               </ul>
               <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
-                服务品类为非医疗室内照护：喂食、换水、清理猫砂/生活区、拍照反馈。V1
-                不含遛狗、喂药与夜间入户。
+                当前服务为非医疗室内照护：喂食、换水、清理猫砂/生活区、拍照反馈。不含遛狗、喂药与夜间入户。
               </p>
             </div>
           </div>

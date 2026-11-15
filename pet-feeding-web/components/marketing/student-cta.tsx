@@ -40,7 +40,7 @@ export function StudentCta() {
               用碎片时间，服务附近毛孩子
             </h2>
             <p className="mt-4 max-w-md text-base leading-relaxed text-white/85">
-              完成成年实名与在校核验后，可浏览附近任务并报价。报价时可见预计到手金额；履约后按规则结算。
+              普通人完成成年实名核验后即可成为宠护师，浏览附近任务并报价。报价时可见预计到手金额；履约后按规则结算。
             </p>
             <motion.div
               className="mt-8 inline-flex"
@@ -54,7 +54,7 @@ export function StudentCta() {
                 }
                 className="inline-flex h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-trust shadow-sm transition hover:bg-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               >
-                申请成为喂宠员
+                申请成为宠护师
               </a>
             </motion.div>
           </div>
