@@ -42,11 +42,11 @@ func (s *Store) ApplyMachineTextReview(postID string, verdict MachineVerdict, re
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var authorID, content, imagesJSON, currentStatus, currentRisk, currentReason string
+	var authorID, content, imagesJSON, currentStatus, currentRisk string
 	err = tx.QueryRow(`
-		SELECT author_id, content, images_json, moderation_status, moderation_risk, moderation_reason
+		SELECT author_id, content, images_json, moderation_status, moderation_risk
 		FROM community_posts WHERE id = ?
-	`, postID).Scan(&authorID, &content, &imagesJSON, &currentStatus, &currentRisk, &currentReason)
+	`, postID).Scan(&authorID, &content, &imagesJSON, &currentStatus, &currentRisk)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.CommunityPost{}, false, notFound("动态不存在")
 	}
@@ -60,9 +60,8 @@ func (s *Store) ApplyMachineTextReview(postID string, verdict MachineVerdict, re
 
 	images := decodeStrings(imagesJSON)
 	local := s.moderation.ReviewLocal(content, 0)
-	status := currentStatus
+	var status, reason string
 	risk := currentRisk
-	reason := currentReason
 	needsImages := false
 	switch verdict {
 	case MachineRisky:
@@ -203,7 +202,7 @@ func (s *Store) HandleMachineMediaResult(traceID string, verdict MachineVerdict,
 		}
 		return tx.Commit()
 	}
-	status := mediaReviewReview
+	var status string
 	switch verdict {
 	case MachinePass:
 		status = mediaReviewPass
