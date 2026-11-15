@@ -8,15 +8,13 @@ on:
       - "go.mod"
       - "go.sum"
       - ".github/workflows/ci.yml"
+  # Always run on PRs so the required "go" check reports a status
+  # even when the PR has no Go changes (path filters would leave it pending).
   pull_request:
-    paths:
-      - "**/*.go"
-      - "go.mod"
-      - "go.sum"
-      - ".github/workflows/ci.yml"
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   go:
@@ -25,15 +23,33 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            go:
+              - "**/*.go"
+              - "go.mod"
+              - "go.sum"
+              - ".github/workflows/ci.yml"
+
+      - name: Skip (no Go changes)
+        if: steps.changes.outputs.go != 'true'
+        run: echo "No Go-related changes; reporting success for required check."
+
       - uses: actions/setup-go@v5
+        if: steps.changes.outputs.go == 'true'
         with:
           go-version-file: go.mod
 
       - name: Vet
+        if: steps.changes.outputs.go == 'true'
         run: go vet ./...
 
       - name: Test
+        if: steps.changes.outputs.go == 'true'
         run: go test ./...
 
       - name: Build
+        if: steps.changes.outputs.go == 'true'
         run: go build -o /tmp/zoo-api ./cmd/api
