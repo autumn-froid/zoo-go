@@ -63,6 +63,13 @@ const (
 
 	ModeBid   = "bid"
 	ModeFixed = "fixed"
+
+	LeadRoleOwner   = "owner"
+	LeadRoleStudent = "student"
+
+	LeadStatusNew       = "NEW"
+	LeadStatusContacted = "CONTACTED"
+	LeadStatusClosed    = "CLOSED"
 )
 
 type Profile struct {
@@ -688,4 +695,25 @@ type RateRequest struct {
 	OwnerID string `json:"ownerId"`
 	Stars   int    `json:"stars"`
 	Comment string `json:"comment"`
+}
+
+type CreatePilotLeadRequest struct {
+	Role      string `json:"role"`
+	Name      string `json:"name"`
+	Phone     string `json:"phone"`
+	Community string `json:"community"`
+	Note      string `json:"note"`
+	Source    string `json:"source"`
+}
+
+type PilotLead struct {
+	ID        string    `json:"id"`
+	Role      string    `json:"role"`
+	Name      string    `json:"name"`
+	Phone     string    `json:"phone"`
+	Community string    `json:"community"`
+	Note      string    `json:"note"`
+	Source    string    `json:"source"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"createdAt"`
 }

@@ -1,0 +1,26 @@
+# Public site + API on one host (TLS via Let's Encrypt).
+# Point DNS A/AAAA for homepet.cn (and optional www) at this machine first.
+
+homepet.cn {
+	encode gzip zstd
+
+	# Go API + admin UI + signed uploads
+	handle /v1* {
+		reverse_proxy api:8080
+	}
+	handle /admin* {
+		reverse_proxy api:8080
+	}
+	handle /uploads* {
+		reverse_proxy api:8080
+	}
+
+	# Marketing site (Next.js)
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+www.homepet.cn {
+	redir https://homepet.cn{uri} permanent
+}

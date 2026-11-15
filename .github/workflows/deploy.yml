@@ -10,6 +10,7 @@ on:
       - "go.mod"
       - "go.sum"
       - "Dockerfile"
+      - "pet-feeding-web/**"
       - "deploy/**"
       - "docker-compose.yml"
       - ".github/workflows/deploy.yml"
@@ -27,9 +28,10 @@ jobs:
   build-and-push:
     name: build-and-push
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     outputs:
-      image: ${{ steps.meta.outputs.image }}
+      api_image: ${{ steps.meta.outputs.api_image }}
+      web_image: ${{ steps.meta.outputs.web_image }}
     steps:
       - uses: actions/checkout@v5
 
@@ -45,21 +47,34 @@ jobs:
       - name: Image metadata
         id: meta
         run: |
-          image="ghcr.io/${GITHUB_REPOSITORY,,}"
-          tag="${image}:${GITHUB_SHA}"
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
           {
-            echo "image=${tag}"
-            echo "tags=${tag},${image}:latest"
+            echo "api_image=${repo}:${GITHUB_SHA}"
+            echo "api_tags=${repo}:${GITHUB_SHA},${repo}:latest"
+            echo "web_image=${repo}/web:${GITHUB_SHA}"
+            echo "web_tags=${repo}/web:${GITHUB_SHA},${repo}/web:latest"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
+      - name: Build and push API
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.meta.outputs.api_tags }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Build and push web
+        uses: docker/build-push-action@v6
+        with:
+          context: ./pet-feeding-web
+          push: true
+          tags: ${{ steps.meta.outputs.web_tags }}
+          build-args: |
+            NEXT_PUBLIC_SITE_URL=https://homepet.cn
+            NEXT_PUBLIC_API_BASE_URL=
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
 
   deploy:
     name: deploy
@@ -75,7 +90,8 @@ jobs:
           GHCR_USER: ${{ secrets.GHCR_USER }}
           WECHAT_APP_ID: ${{ secrets.WECHAT_APP_ID }}
           WECHAT_APP_SECRET: ${{ secrets.WECHAT_APP_SECRET }}
-          IMAGE: ${{ needs.build-and-push.outputs.image }}
+          API_IMAGE: ${{ needs.build-and-push.outputs.api_image }}
+          WEB_IMAGE: ${{ needs.build-and-push.outputs.web_image }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -83,7 +99,7 @@ jobs:
           port: 22
           # Fail hung SSH / remote docker pulls instead of blocking deploy-production.
           command_timeout: 15m
-          envs: DEPLOY_PATH,GHCR_TOKEN,GHCR_USER,WECHAT_APP_ID,WECHAT_APP_SECRET,IMAGE
+          envs: DEPLOY_PATH,GHCR_TOKEN,GHCR_USER,WECHAT_APP_ID,WECHAT_APP_SECRET,API_IMAGE,WEB_IMAGE
           script: |
             set -euo pipefail
             DEPLOY_PATH="${DEPLOY_PATH:-/opt/zoo-go}"
@@ -115,4 +131,4 @@ jobs:
             if [[ -n "${GHCR_TOKEN:-}" ]]; then
               echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-$USER}" --password-stdin
             fi
-            ./deploy/deploy.sh "$IMAGE"
+            ./deploy/deploy.sh "$API_IMAGE" "$WEB_IMAGE"

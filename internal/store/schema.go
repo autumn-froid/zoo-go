@@ -344,6 +344,21 @@ CREATE TABLE IF NOT EXISTS admin_audit_logs (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_logs(created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS pilot_leads (
+    id TEXT PRIMARY KEY,
+    role TEXT NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    community TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'website',
+    status TEXT NOT NULL DEFAULT 'NEW',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pilot_leads_created ON pilot_leads(created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_pilot_leads_phone_created ON pilot_leads(phone, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pilot_leads_status ON pilot_leads(status, created_at DESC);
 `
 
 var defaultServiceAreas = []struct {

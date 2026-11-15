@@ -129,7 +129,9 @@ func (s *Server) Handler() http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/healthz", s.health)
+	mux.HandleFunc("POST /v1/leads", s.createPilotLead)
 	mux.HandleFunc("POST /v1/auth/wechat/login", s.login)
+	mux.HandleFunc("GET /v1/admin/leads", s.adminOnly(s.adminPilotLeads))
 	mux.HandleFunc("POST /v1/admin/students/{id}/approve", s.adminOnly(s.adminApproveStudent))
 	mux.HandleFunc("GET /v1/admin/overview", s.adminOnly(s.adminOverview))
 	mux.HandleFunc("GET /v1/admin/dispatch/compare", s.adminOnly(s.adminDispatchCompare))
