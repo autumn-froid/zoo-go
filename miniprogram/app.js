@@ -44,7 +44,7 @@ const deviceID = () => {
 
 App({
     globalData: {
-        apiBase: wx.getStorageSync('apiBase') || 'http://127.0.0.1:8080',
+        apiBase: wx.getStorageSync('apiBase') || 'http://1.92.99.17:8080',
         token: '',
         profile: null,
         authReady: null,
