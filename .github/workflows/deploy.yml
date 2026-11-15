@@ -80,8 +80,40 @@ jobs:
     name: deploy
     needs: build-and-push
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
+      # Runner can reach GitHub; ECS in China often cannot. Sync deploy configs over SSH
+      # instead of `git fetch` on the server.
+      - uses: actions/checkout@v5
+
+      - name: Ensure deploy directory on ECS
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          command_timeout: 2m
+          envs: DEPLOY_PATH
+          script: |
+            set -euo pipefail
+            DEPLOY_PATH="${DEPLOY_PATH:-/opt/zoo-go}"
+            mkdir -p "$DEPLOY_PATH/deploy" "$DEPLOY_PATH/data" "$DEPLOY_PATH/secrets"
+
+      - name: Sync deploy configs to ECS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          source: "deploy/Caddyfile,deploy/deploy.sh,deploy/docker-compose.yml,deploy/.env.example"
+          target: ${{ secrets.DEPLOY_PATH }}/deploy
+          strip_components: 1
+          overwrite: true
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.2
         env:
@@ -98,22 +130,20 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: 22
           # Fail hung SSH / remote docker pulls instead of blocking deploy-production.
-          command_timeout: 15m
+          command_timeout: 20m
           envs: DEPLOY_PATH,GHCR_TOKEN,GHCR_USER,WECHAT_APP_ID,WECHAT_APP_SECRET,API_IMAGE,WEB_IMAGE
           script: |
             set -euo pipefail
             DEPLOY_PATH="${DEPLOY_PATH:-/opt/zoo-go}"
             cd "$DEPLOY_PATH"
-            git fetch origin main
-            git checkout --force main
-            git reset --hard origin/main
+            chmod +x ./deploy/deploy.sh
             if [[ -z "${WECHAT_APP_ID:-}" || -z "${WECHAT_APP_SECRET:-}" ]]; then
               echo "missing WECHAT_APP_ID or WECHAT_APP_SECRET GitHub secret" >&2
               exit 1
             fi
             env_file="$DEPLOY_PATH/deploy/.env"
             if [[ ! -f "$env_file" ]]; then
-              echo "missing $env_file" >&2
+              echo "missing $env_file — copy deploy/.env.example to deploy/.env on the host and fill secrets" >&2
               exit 1
             fi
             set_env() {

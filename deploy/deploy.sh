@@ -76,7 +76,20 @@ if [[ "$zoo_image" == */* || "$web_image" == */* ]]; then
   should_pull=true
 fi
 if [[ "$should_pull" == true ]]; then
-  docker compose pull
+  # ghcr.io from China ECS can be flaky; retry a few times before failing.
+  pull_ok=false
+  for attempt in 1 2 3 4 5; do
+    if docker compose pull; then
+      pull_ok=true
+      break
+    fi
+    echo "docker compose pull failed (attempt ${attempt}/5); retrying in $((attempt * 5))s..." >&2
+    sleep $((attempt * 5))
+  done
+  if [[ "$pull_ok" != true ]]; then
+    echo "docker compose pull failed after retries (check ECS access to ghcr.io)" >&2
+    exit 1
+  fi
 fi
 docker compose up -d --remove-orphans
 docker compose ps
