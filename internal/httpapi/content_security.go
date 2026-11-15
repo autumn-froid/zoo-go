@@ -8,6 +8,21 @@ import (
 	"zoo-go/internal/store"
 )
 
+func (s *Server) wechatContentSecurityVerify(w http.ResponseWriter, r *http.Request) {
+	if s.callbackVerifier == nil {
+		http.NotFound(w, r)
+		return
+	}
+	echo, err := s.callbackVerifier.VerifyURL(r)
+	if err != nil {
+		s.logger.WarnContext(r.Context(), "reject wechat content security URL verification", "error", err)
+		http.Error(w, "fail", http.StatusForbidden)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(echo))
+}
+
 func (s *Server) wechatContentSecurityNotify(w http.ResponseWriter, r *http.Request) {
 	if s.callbackVerifier == nil {
 		http.NotFound(w, r)

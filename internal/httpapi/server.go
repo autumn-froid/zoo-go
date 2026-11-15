@@ -144,6 +144,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/admin/refunds/{id}/reject", s.adminOnly(s.rejectRefund))
 	mux.HandleFunc("POST /v1/payments/wechat/notify", s.wechatPaymentNotify)
 	mux.HandleFunc("POST /v1/refunds/wechat/notify", s.wechatRefundNotify)
+	mux.HandleFunc("GET /v1/wechat/content-security/notify", s.wechatContentSecurityVerify)
 	mux.HandleFunc("POST /v1/wechat/content-security/notify", s.wechatContentSecurityNotify)
 	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/", http.StatusTemporaryRedirect)

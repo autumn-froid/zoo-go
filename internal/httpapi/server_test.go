@@ -495,13 +495,49 @@ func TestCommunityMachineReviewCallbackFlow(t *testing.T) {
 func TestCommunityMachineReviewCallbackRequiresVerifier(t *testing.T) {
 	api := newTestAPI(t)
 	body := `<xml><Event>wxa_media_check</Event><trace_id>trace-1</trace_id></xml>`
-	response, err := http.Post(api.base+"/v1/wechat/content-security/notify", "application/xml", strings.NewReader(body))
+	response, err := http.Get(api.base + "/v1/wechat/content-security/notify")
+	if err != nil {
+		t.Fatalf("URL verification request: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("URL verification without verifier status = %d, want %d", response.StatusCode, http.StatusNotFound)
+	}
+	response, err = http.Post(api.base+"/v1/wechat/content-security/notify", "application/xml", strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("callback request: %v", err)
 	}
 	response.Body.Close()
 	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("callback without verifier status = %d, want %d", response.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestCommunityMachineReviewURLVerification(t *testing.T) {
+	verifier, err := contentsecurity.NewVerifier(contentsecurity.CallbackConfig{
+		Token: "callback-token", AppID: "wx-test",
+	})
+	if err != nil {
+		t.Fatalf("NewVerifier() error = %v", err)
+	}
+	api := newTestAPIWithConfig(t, func(cfg *Config) {
+		cfg.ContentSecurity = &fakeContentSecurityClient{}
+		cfg.CallbackVerifier = verifier
+	})
+	timestamp := fmt.Sprint(time.Now().Unix())
+	nonce := "url-verification"
+	query := url.Values{
+		"timestamp": {timestamp}, "nonce": {nonce}, "echostr": {"callback-ready"},
+		"signature": {wechatCallbackSignature("callback-token", timestamp, nonce)},
+	}
+	response, err := http.Get(api.base + "/v1/wechat/content-security/notify?" + query.Encode())
+	if err != nil {
+		t.Fatalf("URL verification request: %v", err)
+	}
+	responseBody, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || string(responseBody) != "callback-ready" {
+		t.Fatalf("URL verification response = %d %s", response.StatusCode, responseBody)
 	}
 }
 
