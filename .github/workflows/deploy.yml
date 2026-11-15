@@ -73,6 +73,8 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           GHCR_USER: ${{ secrets.GHCR_USER }}
+          WECHAT_APP_ID: ${{ secrets.WECHAT_APP_ID }}
+          WECHAT_APP_SECRET: ${{ secrets.WECHAT_APP_SECRET }}
           IMAGE: ${{ needs.build-and-push.outputs.image }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -81,7 +83,7 @@ jobs:
           port: 22
           # Fail hung SSH / remote docker pulls instead of blocking deploy-production.
           command_timeout: 15m
-          envs: DEPLOY_PATH,GHCR_TOKEN,GHCR_USER,IMAGE
+          envs: DEPLOY_PATH,GHCR_TOKEN,GHCR_USER,WECHAT_APP_ID,WECHAT_APP_SECRET,IMAGE
           script: |
             set -euo pipefail
             DEPLOY_PATH="${DEPLOY_PATH:-/opt/zoo-go}"
@@ -89,6 +91,27 @@ jobs:
             git fetch origin main
             git checkout --force main
             git reset --hard origin/main
+            if [[ -z "${WECHAT_APP_ID:-}" || -z "${WECHAT_APP_SECRET:-}" ]]; then
+              echo "missing WECHAT_APP_ID or WECHAT_APP_SECRET GitHub secret" >&2
+              exit 1
+            fi
+            env_file="$DEPLOY_PATH/deploy/.env"
+            if [[ ! -f "$env_file" ]]; then
+              echo "missing $env_file" >&2
+              exit 1
+            fi
+            set_env() {
+              local key="$1"
+              local value="$2"
+              if grep -Eq "^${key}=" "$env_file"; then
+                sed -i.bak "s|^${key}=.*|${key}=${value}|" "$env_file"
+                rm -f "$env_file.bak"
+              else
+                printf '\n%s=%s\n' "$key" "$value" >> "$env_file"
+              fi
+            }
+            set_env WECHAT_APP_ID "$WECHAT_APP_ID"
+            set_env WECHAT_APP_SECRET "$WECHAT_APP_SECRET"
             if [[ -n "${GHCR_TOKEN:-}" ]]; then
               echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-$USER}" --password-stdin
             fi
