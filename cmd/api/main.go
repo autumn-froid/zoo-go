@@ -75,6 +75,7 @@ func main() {
 		AdminToken:      os.Getenv("ADMIN_TOKEN"),
 		UploadDir:       *uploadDir,
 		AdminDir:        *adminDir,
+		MediaSigningKey: os.Getenv("UPLOAD_SIGNING_KEY"),
 	}
 	payments, err := buildPaymentService(st, logger)
 	if err != nil {

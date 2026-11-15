@@ -14,7 +14,7 @@ func (s *Server) adminStudentVerifications(w http.ResponseWriter, r *http.Reques
 		writeError(w, err)
 		return
 	}
-	writeData(w, applications)
+	s.writeData(w, applications)
 }
 
 func (s *Server) adminApproveStudentVerification(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +41,7 @@ func (s *Server) adminApproveStudentVerification(w http.ResponseWriter, r *http.
 		detail = "有效期至 " + validUntil.Format("2006-01-02")
 	}
 	s.recordAdminAudit("STUDENT_VERIFICATION_APPROVED", "student_verification", r.PathValue("id"), detail)
-	writeData(w, map[string]bool{"ok": true})
+	s.writeData(w, map[string]bool{"ok": true})
 }
 
 func (s *Server) adminRejectStudentVerification(w http.ResponseWriter, r *http.Request) {
@@ -55,5 +55,5 @@ func (s *Server) adminRejectStudentVerification(w http.ResponseWriter, r *http.R
 		return
 	}
 	s.recordAdminAudit("STUDENT_VERIFICATION_REJECTED", "student_verification", r.PathValue("id"), req.Reason)
-	writeData(w, map[string]bool{"ok": true})
+	s.writeData(w, map[string]bool{"ok": true})
 }

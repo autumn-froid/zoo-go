@@ -39,7 +39,7 @@ func (s *Server) adminDispatchCompare(w http.ResponseWriter, r *http.Request) {
 		KM:     dispatchStrategyView(km, taskCommunities, studentNames),
 	}
 	response.ScoreGap = km.TotalScore - greedy.TotalScore
-	writeData(w, response)
+	s.writeData(w, response)
 }
 
 func dispatchStrategyView(result dispatch.Result, taskCommunities, studentNames map[string]string) domain.DispatchStrategyView {

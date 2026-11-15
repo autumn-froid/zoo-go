@@ -27,7 +27,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, session)
+	s.writeData(w, session)
 }
 
 func (s *Server) resolveOpenID(req domain.LoginRequest) (string, error) {
@@ -92,7 +92,7 @@ func (s *Server) wechatOpenID(code string) (string, error) {
 }
 
 func (s *Server) authMe(w http.ResponseWriter, r *http.Request) {
-	writeData(w, currentUser(r))
+	s.writeData(w, currentUser(r))
 }
 
 func (s *Server) updateProfile(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +106,7 @@ func (s *Server) updateProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, profile)
+	s.writeData(w, profile)
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -114,5 +114,5 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, map[string]bool{"ok": true})
+	s.writeData(w, map[string]bool{"ok": true})
 }

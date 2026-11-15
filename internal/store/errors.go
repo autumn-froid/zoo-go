@@ -28,6 +28,10 @@ func forbidden(message string) error {
 	return &AppError{Status: 403, Code: "FORBIDDEN", Message: message}
 }
 
+func rateLimited(message string) error {
+	return &AppError{Status: 429, Code: "RATE_LIMITED", Message: message}
+}
+
 func locationRequired(message string) error {
 	return &AppError{Status: 422, Code: "LOCATION_REQUIRED", Message: message}
 }

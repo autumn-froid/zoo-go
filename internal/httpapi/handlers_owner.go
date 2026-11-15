@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Server) meta(w http.ResponseWriter, _ *http.Request) {
-	writeData(w, s.store.Meta(s.now()))
+	s.writeData(w, s.store.Meta(s.now()))
 }
 
 func (s *Server) ownerHome(w http.ResponseWriter, r *http.Request) {
@@ -18,7 +18,7 @@ func (s *Server) ownerHome(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, home)
+	s.writeData(w, home)
 }
 
 func (s *Server) ownerProfile(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +27,7 @@ func (s *Server) ownerProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, profile)
+	s.writeData(w, profile)
 }
 
 func (s *Server) ownerPets(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +36,7 @@ func (s *Server) ownerPets(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, pets)
+	s.writeData(w, pets)
 }
 
 func (s *Server) createPet(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +50,7 @@ func (s *Server) createPet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, envelope{Data: pet})
+	s.writeDataStatus(w, http.StatusCreated, pet)
 }
 
 func (s *Server) ownerTasks(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +59,7 @@ func (s *Server) ownerTasks(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, tasks)
+	s.writeData(w, tasks)
 }
 
 func (s *Server) task(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +70,7 @@ func (s *Server) task(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, view)
+	s.writeData(w, view)
 }
 
 func (s *Server) publishTask(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +85,7 @@ func (s *Server) publishTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, envelope{Data: view})
+	s.writeDataStatus(w, http.StatusCreated, view)
 }
 
 func (s *Server) submitBid(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +100,7 @@ func (s *Server) submitBid(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, view)
+	s.writeData(w, view)
 }
 
 func (s *Server) awardTask(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +115,7 @@ func (s *Server) awardTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, view)
+	s.writeData(w, view)
 }
 
 func (s *Server) reopenTask(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +126,7 @@ func (s *Server) reopenTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.closePaymentAsync(oldOrderID)
-	writeData(w, view)
+	s.writeData(w, view)
 }
 
 func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +137,7 @@ func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.closePaymentAsync(oldOrderID)
-	writeData(w, view)
+	s.writeData(w, view)
 }
 
 func (s *Server) taskOrderID(taskID, ownerID string) string {
@@ -166,7 +166,7 @@ func (s *Server) order(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, view)
+	s.writeData(w, view)
 }
 
 func (s *Server) checkIn(w http.ResponseWriter, r *http.Request) {
@@ -175,7 +175,7 @@ func (s *Server) checkIn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, view)
+	s.writeData(w, view)
 }
 
 func (s *Server) complete(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +190,7 @@ func (s *Server) complete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, view)
+	s.writeData(w, view)
 }
 
 func (s *Server) confirm(w http.ResponseWriter, r *http.Request) {
@@ -199,7 +199,7 @@ func (s *Server) confirm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, view)
+	s.writeData(w, view)
 }
 
 func (s *Server) rate(w http.ResponseWriter, r *http.Request) {
@@ -214,7 +214,7 @@ func (s *Server) rate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, view)
+	s.writeData(w, view)
 }
 
 func (s *Server) availableTasks(w http.ResponseWriter, r *http.Request) {
@@ -223,7 +223,7 @@ func (s *Server) availableTasks(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, tasks)
+	s.writeData(w, tasks)
 }
 
 func (s *Server) updateStudentLocation(w http.ResponseWriter, r *http.Request) {
@@ -237,7 +237,7 @@ func (s *Server) updateStudentLocation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, location)
+	s.writeData(w, location)
 }
 
 func (s *Server) studentTasks(w http.ResponseWriter, r *http.Request) {
@@ -246,7 +246,7 @@ func (s *Server) studentTasks(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, tasks)
+	s.writeData(w, tasks)
 }
 
 func (s *Server) studentEarnings(w http.ResponseWriter, r *http.Request) {
@@ -255,7 +255,7 @@ func (s *Server) studentEarnings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, earnings)
+	s.writeData(w, earnings)
 }
 
 func (s *Server) studentProfile(w http.ResponseWriter, r *http.Request) {
@@ -264,7 +264,7 @@ func (s *Server) studentProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeData(w, student)
+	s.writeData(w, student)
 }
 
 func (s *Server) submitStudentVerification(w http.ResponseWriter, r *http.Request) {
@@ -278,7 +278,7 @@ func (s *Server) submitStudentVerification(w http.ResponseWriter, r *http.Reques
 		writeError(w, err)
 		return
 	}
-	writeData(w, student)
+	s.writeData(w, student)
 }
 
 func (s *Server) adminApproveStudent(w http.ResponseWriter, r *http.Request) {
@@ -287,5 +287,5 @@ func (s *Server) adminApproveStudent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAdminAudit("STUDENT_VERIFICATION_APPROVED", "user", r.PathValue("id"), "兼容接口审核通过")
-	writeData(w, map[string]bool{"ok": true})
+	s.writeData(w, map[string]bool{"ok": true})
 }
